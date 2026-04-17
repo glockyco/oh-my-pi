@@ -55,7 +55,12 @@ import {
 	transformRequestBody,
 } from "./openai-codex/request-transformer";
 import { parseCodexError } from "./openai-codex/response-handler";
-import { encodeTextSignatureV1, mapOpenAIResponsesStopReason, parseTextSignature } from "./openai-responses-shared";
+import {
+	convertResponsesInputContent,
+	encodeTextSignatureV1,
+	mapOpenAIResponsesStopReason,
+	parseTextSignature,
+} from "./openai-responses-shared";
 import { transformMessages } from "./transform-messages";
 
 export interface OpenAICodexResponsesOptions extends StreamOptions {
@@ -2094,8 +2099,8 @@ function convertMessages(model: Model<"openai-codex-responses">, context: Contex
 				continue;
 			}
 
-			const normalizedContent = normalizeInputMessageContent(model, msg.content);
-			if (normalizedContent.length === 0) continue;
+			const normalizedContent = convertResponsesInputContent(msg.content, model.input.includes("image"));
+			if (!normalizedContent) continue;
 			messages.push({ role: msg.role, content: normalizedContent });
 			msgIndex += 1;
 			continue;
@@ -2198,32 +2203,6 @@ function convertMessages(model: Model<"openai-codex-responses">, context: Contex
 	}
 
 	return messages;
-}
-
-function normalizeInputMessageContent(
-	model: Model<"openai-codex-responses">,
-	content: string | Array<{ type: "text"; text: string } | { type: "image"; mimeType: string; data: string }>,
-): ResponseInputContent[] {
-	if (typeof content === "string") {
-		if (!content || content.trim() === "") return [];
-		return [{ type: "input_text", text: content.toWellFormed() }];
-	}
-
-	const normalizedContent: ResponseInputContent[] = content.map(item => {
-		if (item.type === "text") {
-			return { type: "input_text", text: item.text.toWellFormed() } satisfies ResponseInputText;
-		}
-		return {
-			type: "input_image",
-			detail: "auto",
-			image_url: `data:${item.mimeType};base64,${item.data}`,
-		} satisfies ResponseInputImage;
-	});
-
-	const maybeWithoutImages = model.input.includes("image")
-		? normalizedContent
-		: normalizedContent.filter(item => item.type !== "input_image");
-	return maybeWithoutImages.filter(item => item.type !== "input_text" || item.text.trim().length > 0);
 }
 
 function convertTools(tools: Tool[]): Array<{

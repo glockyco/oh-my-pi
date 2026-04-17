@@ -88,13 +88,18 @@ export function collectKnownCallIds(messages: ResponseInput): Set<string> {
 }
 
 export function convertResponsesInputContent(
-	content: string | Array<TextContent | ImageContent>,
+	content: string | Array<TextContent | ImageContent> | undefined | null,
 	supportsImages: boolean,
 ): ResponseInputContent[] | undefined {
 	if (typeof content === "string") {
 		if (content.trim().length === 0) return undefined;
 		return [{ type: "input_text", text: content.toWellFormed() } satisfies ResponseInputText];
 	}
+
+	// Defense: callers (custom/hook messages, session rehydration, legacy entries) can violate
+	// the TS contract and feed undefined/null or a non-array. Treat as "no content" rather than
+	// crashing with a cryptic ".map is not a function" deep inside the provider.
+	if (!Array.isArray(content)) return undefined;
 
 	const normalizedContent = content
 		.map((item): ResponseInputContent => {
