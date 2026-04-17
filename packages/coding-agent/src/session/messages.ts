@@ -294,13 +294,25 @@ export function convertToLlm(messages: AgentMessage[]): Message[] {
 					};
 				case "custom":
 				case "hookMessage": {
-					const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
-					const role = "user";
-					const attribution = m.attribution;
+					// CustomMessage.content is typed as string | content[], but extensions/hooks calling
+					// pi.sendMessage() can violate the contract at runtime (e.g. pi.sendMessage(stringArg)
+					// instead of pi.sendMessage({ customType, content, ... })). Drop messages without
+					// meaningful content rather than forwarding a malformed payload to providers, which
+					// otherwise crash deep in transport code with errors like "content.map is not a function".
+					const raw = m.content;
+					let content: (TextContent | ImageContent)[];
+					if (typeof raw === "string") {
+						if (raw.length === 0) return undefined;
+						content = [{ type: "text", text: raw }];
+					} else if (Array.isArray(raw) && raw.length > 0) {
+						content = raw;
+					} else {
+						return undefined;
+					}
 					return {
-						role,
+						role: "user",
 						content,
-						attribution,
+						attribution: m.attribution,
 						timestamp: m.timestamp,
 					};
 				}

@@ -572,10 +572,12 @@ class TreeList implements Component {
 				const content =
 					typeof entry.content === "string"
 						? entry.content
-						: entry.content
-								.filter((c): c is { type: "text"; text: string } => c.type === "text")
-								.map(c => c.text)
-								.join("");
+						: Array.isArray(entry.content)
+							? entry.content
+									.filter((c): c is { type: "text"; text: string } => c.type === "text")
+									.map(c => c.text)
+									.join("")
+							: "";
 				result = theme.fg("customMessageLabel", `[${entry.customType}]: `) + normalize(content);
 				break;
 			}
