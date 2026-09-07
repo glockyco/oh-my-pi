@@ -6,6 +6,7 @@
  * permits it. Falls back to plain text when disabled.
  */
 import * as url from "node:url";
+import { $env, isWsl } from "@oh-my-pi/pi-utils";
 import { setTerminalHyperlinks, TERMINAL, type TerminalId } from "../terminal-capabilities";
 
 const OSC = "\x1b]";
@@ -53,7 +54,17 @@ export function fileUriForTerminal(
 	opts: { line?: number; col?: number } | undefined,
 	terminalId: TerminalId,
 ): string {
-	if (terminalId !== "vscode") return url.pathToFileURL(filePath).href;
+	if (terminalId !== "vscode") {
+		const uri = url.pathToFileURL(filePath);
+		if (isWsl() && $env.WT_SESSION && $env.WSL_DISTRO_NAME) {
+			// Windows Terminal opens paths on Windows; Linux GUI terminals need the original local URI.
+			uri.hostname = "wsl.localhost";
+			uri.pathname = `/${encodeURIComponent($env.WSL_DISTRO_NAME)}${uri.pathname}`;
+			if (opts?.line !== undefined) uri.searchParams.set("line", String(opts.line));
+			if (opts?.col !== undefined) uri.searchParams.set("col", String(opts.col));
+		}
+		return uri.href;
+	}
 	// vscode:// takes a filesystem path with forward slashes. Encode each
 	// segment independently so separators and a Windows drive colon stay
 	// structural while reserved bytes in file names cannot become URI syntax.
