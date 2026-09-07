@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Make generated image paths clickable in tool results.
 - Make relative paths clickable in Read headers and grouped entries.
 - Open local source-position links at the file while preserving displayed locations.
 - Fix chat links to existing local paths containing unescaped spaces.
