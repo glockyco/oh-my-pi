@@ -38,7 +38,7 @@ afterAll(() => {
 });
 
 describe("readToolRenderer hyperlinks", () => {
-	it("links local-style read titles to the resolved filesystem path and selected line", async () => {
+	it("links local-style read titles to files while keeping selected lines visible", async () => {
 		settings.override("tui.hyperlinks", "always");
 		const theme = await getThemeByName("dark");
 		expect(theme).toBeDefined();
@@ -62,13 +62,12 @@ describe("readToolRenderer hyperlinks", () => {
 		expect(rendered).toContain("local://handoff.md");
 		expect(rendered).toContain(":2");
 		const handoffUri = new URL(url.pathToFileURL(path.resolve(handoffPath)).href);
-		handoffUri.searchParams.set("line", "2");
 		expect(extractLinkUris(rendered)).toContain(handoffUri.href);
 		expect(extractLinkTexts(rendered)).toContain("local://handoff.md");
 		expect(extractLinkTexts(rendered)).not.toContain("local://handoff.md:2");
 	});
 
-	it("links absolute read call paths to file URIs with selector lines", async () => {
+	it("links absolute read call paths without adding selectors to file URIs", async () => {
 		settings.override("tui.hyperlinks", "always");
 		const theme = await getThemeByName("dark");
 		expect(theme).toBeDefined();
@@ -83,7 +82,6 @@ describe("readToolRenderer hyperlinks", () => {
 		const rendered = component.render(200).join("\n");
 		expect(Bun.stripANSI(rendered)).toContain(`${examplePath}:10-12`);
 		const exampleUri = new URL(url.pathToFileURL(path.resolve(examplePath)).href);
-		exampleUri.searchParams.set("line", "10");
 		expect(extractLinkUris(rendered)).toContain(exampleUri.href);
 		expect(extractLinkTexts(rendered)).toContain(examplePath);
 		expect(extractLinkTexts(rendered)).not.toContain(`${examplePath}:10-12`);

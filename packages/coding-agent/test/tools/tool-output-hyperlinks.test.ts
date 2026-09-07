@@ -140,11 +140,8 @@ describe("tool output OSC 8 file:// hyperlinks", () => {
 			.render(240)
 			.join("\n");
 		const interactiveModeUri = url.pathToFileURL(path.resolve(interactiveModePath)).href;
-		const interactiveModeLineUri = new URL(interactiveModeUri);
-		interactiveModeLineUri.searchParams.set("line", "12");
 		const uris = extractLinkUris(rendered);
 		expect(uris).toContain(interactiveModeUri);
-		expect(uris).toContain(interactiveModeLineUri.href);
 		expect(uris.some(uri => uri.includes("/src/src/"))).toBe(false);
 	});
 
@@ -185,7 +182,7 @@ describe("tool output OSC 8 file:// hyperlinks", () => {
 			.renderResult(
 				{
 					content: [{ type: "text", text: "Updated src/a.ts" }],
-					details: { diff: "+1|// x", op: "update", path: editPath },
+					details: { diff: "+1|// x", op: "update", path: editPath, firstChangedLine: 17 },
 				},
 				{ expanded: false, isPartial: false, renderContext: { editMode: "hashline" } },
 				theme,

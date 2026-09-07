@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Open local source-position links at the file while preserving displayed locations.
 - Fix chat links to existing local paths containing unescaped spaces.
 - Fix file hyperlinks in Windows Terminal under WSL.
 

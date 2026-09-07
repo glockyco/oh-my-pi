@@ -35,17 +35,6 @@ function splitReadRenderPath(rawPath: string): { path: string; sel?: string } {
 	return splitPathAndSel(rawPath);
 }
 
-function firstReadSelectorLine(sel: string | undefined): number | undefined {
-	if (!sel) return undefined;
-	try {
-		const parsed = parseSel(sel);
-		if (parsed.kind !== "lines") return undefined;
-		return parsed.ranges[0].startLine;
-	} catch {
-		return undefined;
-	}
-}
-
 /** Absolute fs path the read result actually resolved to, used as the OSC 8 link
  * target when the structured `resolvedPath` isn't set (the common plain-file and
  * image reads only record the path in `meta.source`). URL/internal sources are
@@ -61,7 +50,6 @@ function formatReadPathLink(
 		resolvedPath?: string;
 		sourcePath?: string;
 		suffixResolution?: { from: string; to: string };
-		offset?: number;
 		fallbackLabel?: string;
 	},
 ): string {
@@ -74,9 +62,7 @@ function formatReadPathLink(
 	const absoluteInputPath = path.isAbsolute(basePath) ? basePath : undefined;
 	const target =
 		options.resolvedPath ?? options.sourcePath ?? tryResolveInternalUrlSync(basePath) ?? absoluteInputPath;
-	const line = firstReadSelectorLine(split.sel) ?? options.offset;
-	const linkOptions = line !== undefined ? { line } : undefined;
-	const linkedPath = target ? fileHyperlink(target, plainDisplayPath, linkOptions) : plainDisplayPath;
+	const linkedPath = target ? fileHyperlink(target, plainDisplayPath) : plainDisplayPath;
 	return `${linkedPath}${selectorSuffix}`;
 }
 
@@ -91,7 +77,7 @@ export const readToolRenderer = {
 		const offset = args.offset;
 		const limit = args.limit;
 
-		let pathDisplay = formatReadPathLink(rawPath, { offset, fallbackLabel: "…" }) || "…";
+		let pathDisplay = formatReadPathLink(rawPath, { fallbackLabel: "…" }) || "…";
 		if (offset !== undefined || limit !== undefined) {
 			const startLine = offset ?? 1;
 			const endLine = limit !== undefined ? startLine + limit - 1 : "";
@@ -129,8 +115,7 @@ export const readToolRenderer = {
 			const rawPath =
 				typeof args?.file_path === "string" ? args.file_path : typeof args?.path === "string" ? args.path : "";
 			const filePath =
-				formatReadPathLink(rawPath, { offset: args?.offset, sourcePath: readSourceFsPath(result.details) }) ||
-				shortenPath(rawPath);
+				formatReadPathLink(rawPath, { sourcePath: readSourceFsPath(result.details) }) || shortenPath(rawPath);
 			let title = filePath ? `Read ${filePath}` : "Read";
 			if (args?.offset !== undefined || args?.limit !== undefined) {
 				const startLine = args.offset ?? 1;
@@ -223,7 +208,6 @@ export const readToolRenderer = {
 			resolvedPath: details?.resolvedPath,
 			sourcePath: readSourceFsPath(details),
 			suffixResolution: suffix,
-			offset: args?.offset,
 		});
 		const correction = suffix ? ` ${uiTheme.fg("dim", `(corrected from ${shortenPath(suffix.from)})`)}` : "";
 		let title = displayPath ? `Read ${displayPath}${correction}` : "Read";

@@ -314,7 +314,7 @@ describe("ReadToolGroupComponent", () => {
 		expect(usageIndices[0]).toBeGreaterThan(previewIndex);
 	});
 
-	it("links grouped summary paths to resolved filesystem paths and selector lines", () => {
+	it("links grouped summary paths to files while keeping selector lines visible", () => {
 		settings.override("tui.hyperlinks", "always");
 		const component = new ReadToolGroupComponent();
 		const examplePath = path.resolve("/workspace/src/example.ts");
@@ -331,7 +331,6 @@ describe("ReadToolGroupComponent", () => {
 		const rendered = component.render(120).join("\n");
 
 		const exampleUri = new URL(url.pathToFileURL(path.resolve(examplePath)).href);
-		exampleUri.searchParams.set("line", "7");
 		expect(Bun.stripANSI(rendered)).toContain("Read src/example.ts:7-9");
 		expect(extractLinkUris(rendered)).toContain(exampleUri.href);
 		expect(extractLinkTexts(rendered)).toContain("src/example.ts");
@@ -355,7 +354,6 @@ describe("ReadToolGroupComponent", () => {
 		const rendered = component.render(120).join("\n");
 
 		const previewUri = new URL(url.pathToFileURL(path.resolve(previewPath)).href);
-		previewUri.searchParams.set("line", "20");
 		expect(Bun.stripANSI(rendered)).toContain("Read src/preview.ts:20-22");
 		expect(extractLinkUris(rendered)).toContain(previewUri.href);
 		expect(extractLinkTexts(rendered)).toContain("src/preview.ts");

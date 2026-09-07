@@ -261,7 +261,6 @@ function getOperationTitle(op: Operation | undefined): string {
 
 interface EditPathDisplayOptions {
 	rename?: string;
-	firstChangedLine?: number;
 	linkPath?: string;
 	renameLinkPath?: string;
 	maxPathWidth?: number;
@@ -296,10 +295,9 @@ function formatEditPathDisplay(
 	// absolute path when known — a relative `rawPath` would otherwise yield a
 	// `file:///rel` URI that resolves against filesystem root instead of cwd.
 	const linkTarget = options?.linkPath || rawPath;
-	const lineLink = options?.firstChangedLine ? { line: options.firstChangedLine } : undefined;
 	const primaryDisplay = rawPath ? formatEditTitlePath(rawPath, options?.maxPathWidth) : "…";
 	let pathDisplay = rawPath
-		? fileHyperlink(linkTarget, uiTheme.fg("accent", primaryDisplay), lineLink)
+		? fileHyperlink(linkTarget, uiTheme.fg("accent", primaryDisplay))
 		: uiTheme.fg("toolOutput", primaryDisplay);
 	let pathWidth = visibleWidth(primaryDisplay);
 
@@ -342,7 +340,6 @@ function renderEditHeader(
 		op?: Operation;
 		rawPath: string;
 		rename?: string;
-		firstChangedLine?: number;
 		linkPath?: string;
 		statsSuffix?: string;
 		extraSuffix?: string;
@@ -352,7 +349,6 @@ function renderEditHeader(
 	const title = options.title ?? getOperationTitle(options.op);
 	const descriptionOptions: EditPathDisplayOptions = {
 		rename: options.rename,
-		firstChangedLine: options.firstChangedLine,
 		linkPath: options.linkPath,
 	};
 	const formatted = formatEditDescription(options.rawPath, uiTheme, descriptionOptions);
@@ -1047,9 +1043,6 @@ function renderSingleFileResult(
 			invalidateRenderedStringCache(diffSectionCache);
 			invalidateRenderedStringCache(renderedDiffCache);
 		}
-		const firstChangedLine =
-			(editDiffPreview && "firstChangedLine" in editDiffPreview ? editDiffPreview.firstChangedLine : undefined) ||
-			(details && !isError ? details.firstChangedLine : undefined);
 		const linkPath = details && "path" in details ? details.path : undefined;
 
 		// Change stats ride inline on the header bar next to the path.
@@ -1066,7 +1059,6 @@ function renderSingleFileResult(
 			op,
 			rawPath,
 			rename,
-			firstChangedLine,
 			linkPath,
 			statsSuffix,
 		});

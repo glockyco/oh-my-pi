@@ -7,8 +7,10 @@ import { getThemeByName } from "@oh-my-pi/pi-coding-agent/modes/theme/theme";
 import { sanitizeText } from "@oh-my-pi/pi-utils";
 import { grepToolRenderer } from "../../src/tools/grep";
 
-function extractLinkUris(text: string): string[] {
-	return [...text.matchAll(/\x1b\]8;[^;]*;([^\x1b]+)\x1b\\/g)].map(match => match[1]!);
+function extractLinkUris(text: string, label?: string): string[] {
+	return [...text.matchAll(/\x1b\]8;[^;]*;([^\x1b]+)\x1b\\([\s\S]*?)\x1b\]8;;\x1b\\/g)]
+		.filter(match => label === undefined || Bun.stripANSI(match[2]!).includes(label))
+		.map(match => match[1]!);
 }
 
 beforeAll(async () => {
@@ -150,12 +152,10 @@ describe("grepToolRenderer", () => {
 			.render(240)
 			.join("\n");
 		const fileUri = url.pathToFileURL(path.resolve(filePath)).href;
-		const lineUri = new URL(fileUri);
-		lineUri.searchParams.set("line", "12");
 		const uris = extractLinkUris(rendered);
 
 		expect(uris).toContain(fileUri);
-		expect(uris).toContain(lineUri.href);
+		expect(extractLinkUris(rendered, "12│const needle = true;")).toEqual([fileUri]);
 	});
 
 	it("links single-file code-frame lines to the searched file", async () => {
@@ -181,9 +181,8 @@ describe("grepToolRenderer", () => {
 			.render(240)
 			.join("\n");
 
-		const lineUri = new URL(url.pathToFileURL(path.resolve(filePath)).href);
-		lineUri.searchParams.set("line", "7");
-		expect(extractLinkUris(rendered)).toContain(lineUri.href);
+		const fileUri = url.pathToFileURL(path.resolve(filePath)).href;
+		expect(extractLinkUris(rendered, "7│needle();")).toEqual([fileUri]);
 	});
 
 	it("bounds the expanded single-file view instead of dumping every match", async () => {
