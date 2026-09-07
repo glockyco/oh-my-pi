@@ -514,8 +514,8 @@ function parseTmuxVersionFromEnv(env: NodeJS.ProcessEnv): { major: number; minor
  * Policy (highest precedence first):
  *   1. Explicit user override (`PI_NO_HYPERLINKS=1` off, `PI_FORCE_HYPERLINKS=1`
  *      on). Opt-out wins ties.
- *   2. Static terminal capability — terminals whose {@link TerminalInfo} marks
- *      `hyperlinks: false` (e.g. `base`) stay off unless the user forced on.
+ *   2. Static terminal capability, with `WT_SESSION` enabling the `base` and
+ *      `trueColor` fallback profiles. Known unsupported terminals stay off.
  *   3. GNU screen's explicit session marker (`STY`) always off, even if tmux is
  *      also present: a screen layer anywhere in the path cannot forward OSC 8.
  *   4. tmux session (`TMUX` set): enabled when tmux self-reports >= 3.4 via
@@ -530,7 +530,7 @@ function parseTmuxVersionFromEnv(env: NodeJS.ProcessEnv): { major: number; minor
  *      support.
  *   6. tmux-family TERM without `TMUX` env — unusual (e.g. inspection scripts);
  *      no version available, so off.
- *   7. Otherwise honor the static terminal capability.
+ *   7. Otherwise enable hyperlinks.
  */
 export function shouldEnableHyperlinksByDefault(
 	env: NodeJS.ProcessEnv = Bun.env,
@@ -539,7 +539,8 @@ export function shouldEnableHyperlinksByDefault(
 	const override = hyperlinksUserOverride(env);
 	if (override !== null) return override;
 
-	if (!getTerminalInfo(terminalId).hyperlinks) return false;
+	const windowsTerminalFallback = Boolean(env.WT_SESSION) && (terminalId === "base" || terminalId === "trueColor");
+	if (!getTerminalInfo(terminalId).hyperlinks && !windowsTerminalFallback) return false;
 
 	// STY is GNU screen's explicit session marker. It vetoes tmux enabling when
 	// multiplexers are nested because screen cannot forward OSC 8 anywhere in the
@@ -788,7 +789,7 @@ export const TERMINAL: RuntimeTerminal = (() => {
 	}
 	// Hyperlink (OSC 8) capability. The static per-terminal flag lives on
 	// KNOWN_TERMINALS; shouldEnableHyperlinksByDefault folds in runtime context —
-	// PI_FORCE_HYPERLINKS / PI_NO_HYPERLINKS overrides plus a tmux>=3.4 gate so
+	// user overrides, WT_SESSION fallback support, and a tmux>=3.4 gate so
 	// modern tmux forwards OSC 8 to outer terminals that opt in via
 	// `terminal-features "*:hyperlinks"`.
 	resolved.hyperlinks = shouldEnableHyperlinksByDefault(Bun.env, resolved.id);

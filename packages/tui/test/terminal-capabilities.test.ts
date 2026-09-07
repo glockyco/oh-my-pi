@@ -585,6 +585,65 @@ describe("shouldEnableHyperlinksByDefault", () => {
 		expect(shouldEnableHyperlinksByDefault({}, "trueColor")).toBe(false);
 	});
 
+	it("enables runtime hyperlinks in Windows Terminal fallback profiles", async () => {
+		for (const profile of [{}, { COLORTERM: "truecolor" }]) {
+			const env = subprocessEnv({
+				TERM: "xterm-256color",
+				TERM_PROGRAM: undefined,
+				COLORTERM: undefined,
+				WT_SESSION: "windows-terminal-session",
+				PI_NO_HYPERLINKS: undefined,
+				PI_FORCE_HYPERLINKS: undefined,
+				TMUX: undefined,
+				STY: undefined,
+				...profile,
+			});
+			const proc = Bun.spawn({
+				cmd: [
+					process.execPath,
+					"--eval",
+					`import { TERMINAL } from "@oh-my-pi/pi-tui/terminal-capabilities";
+console.log(JSON.stringify(TERMINAL.hyperlinks));`,
+				],
+				env,
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			const [stdout, stderr, exitCode] = await Promise.all([
+				new Response(proc.stdout).text(),
+				new Response(proc.stderr).text(),
+				proc.exited,
+			]);
+
+			expect(stderr).toBe("");
+			expect(exitCode).toBe(0);
+			expect(JSON.parse(stdout)).toBe(true);
+		}
+	});
+
+	it("does not let Windows Terminal bypass unsupported intermediaries", () => {
+		for (const intermediary of [
+			{ STY: "1234.pts-0.host" },
+			{ TERM: "screen-256color" },
+			{ TERM: "tmux-256color" },
+			{ TMUX: "/tmp/tmux-1000/default,1,0" },
+			{ TMUX: "/tmp/tmux-1000/default,1,0", TERM_PROGRAM: "tmux", TERM_PROGRAM_VERSION: "3.3a" },
+			{ TERM_PROGRAM: "WarpTerminal" },
+		]) {
+			const env = { WT_SESSION: "windows-terminal-session", COLORTERM: "truecolor", ...intermediary };
+			expect(shouldEnableHyperlinksByDefault(env, detectTerminalId(env))).toBe(false);
+		}
+	});
+
+	it("lets the hyperlink opt-out beat Windows Terminal and force-on", () => {
+		expect(
+			shouldEnableHyperlinksByDefault(
+				{ WT_SESSION: "windows-terminal-session", PI_NO_HYPERLINKS: "1", PI_FORCE_HYPERLINKS: "1" },
+				"trueColor",
+			),
+		).toBe(false);
+	});
+
 	it("keeps GNU screen always off, even when the inner terminal supports OSC 8", () => {
 		expect(shouldEnableHyperlinksByDefault({ STY: "1234.pts-0.host" }, "wezterm")).toBe(false);
 		expect(shouldEnableHyperlinksByDefault({ TERM: "screen-256color" }, "kitty")).toBe(false);
@@ -667,8 +726,13 @@ describe("shouldEnableHyperlinksByDefault", () => {
 	it("enables tmux >= 3.4 since tmux forwards OSC 8 cell attributes to the outer terminal", () => {
 		expect(
 			shouldEnableHyperlinksByDefault(
-				{ TMUX: "/tmp/tmux-1000/default,1,0", TERM_PROGRAM: "tmux", TERM_PROGRAM_VERSION: "3.4" },
-				"wezterm",
+				{
+					WT_SESSION: "windows-terminal-session",
+					TMUX: "/tmp/tmux-1000/default,1,0",
+					TERM_PROGRAM: "tmux",
+					TERM_PROGRAM_VERSION: "3.4",
+				},
+				"base",
 			),
 		).toBe(true);
 		expect(

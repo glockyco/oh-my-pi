@@ -1166,6 +1166,9 @@
 ### Fixed
 
 - Fixed GPT-6 Astra requiring `/extended-context` for its full context window: it now keeps the documented 1.05M-token window with the setting on or off, and explicit per-model `contextWindow` overrides still win.
+### Fixed
+
+- Fix file hyperlinks in Windows Terminal under WSL.
 
 ## [18.1.12] - 2026-09-06
 
