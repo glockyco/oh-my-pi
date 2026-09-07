@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
+import { homedir } from "node:os";
 import * as path from "node:path";
 import * as url from "node:url";
 import * as envUtils from "@oh-my-pi/pi-utils/env";
@@ -85,6 +86,23 @@ describe("readToolRenderer hyperlinks", () => {
 		expect(extractLinkUris(rendered)).toContain(exampleUri.href);
 		expect(extractLinkTexts(rendered)).toContain(examplePath);
 		expect(extractLinkTexts(rendered)).not.toContain(`${examplePath}:10-12`);
+	});
+
+	it.each(["src/example.ts", "~/example.ts"])("links read calls without result metadata: %s", async relativePath => {
+		settings.override("tui.hyperlinks", "always");
+		const theme = await getThemeByName("dark");
+		const component = readToolRenderer.renderCall(
+			{ path: `${relativePath}:10-12` },
+			{ expanded: false, isPartial: false },
+			theme!,
+		);
+		const rendered = component.render(200).join("\n");
+		const target = relativePath.startsWith("~/")
+			? path.join(homedir(), relativePath.slice(2))
+			: path.resolve(relativePath);
+		expect(extractLinkUris(rendered)).toContain(url.pathToFileURL(target).href);
+		expect(extractLinkTexts(rendered)).toContain(relativePath);
+		expect(Bun.stripANSI(rendered)).toContain(`${relativePath}:10-12`);
 	});
 
 	it("links HTTP read result headers to the final URL", async () => {
