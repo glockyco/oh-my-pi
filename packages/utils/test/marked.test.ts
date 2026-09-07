@@ -175,6 +175,135 @@ describe("marked compatibility", () => {
 		expect(marked.parse("before $x_i$\n\n$$\ny^2\n$$\n")).toBe("<p>before <i>x_i</i></p>\n<math>y^2</math>\n");
 	});
 
+	describe("local file link candidates", () => {
+		test("requires opt-in before a spaced destination becomes a link candidate", () => {
+			const source = "[report](my docs/report.md)";
+			expect(Lexer.lexInline(source).map(token => token.type)).toEqual(["text"]);
+			expect(Lexer.lexInline(source, { localFileLinks: true })).toEqual([
+				{
+					type: "link",
+					raw: source,
+					href: "my docs/report.md",
+					title: null,
+					text: "report",
+					tokens: [{ type: "text", raw: "report", text: "report", escaped: false }],
+					requiresResolution: true,
+				},
+			]);
+		});
+
+		test("accepts local path forms without treating a Windows drive as a URL scheme", () => {
+			for (const href of [
+				"report draft.md",
+				"./my docs/report.md",
+				"/my docs/report.md",
+				"~/my docs/report.md",
+				"C:/my docs/report.md",
+				String.raw`C:\my docs\report.md`,
+				"file:///my docs/report.md",
+			]) {
+				expect(Lexer.lexInline(`[report](${href})`, { localFileLinks: true })).toMatchObject([
+					{ type: "link", href, requiresResolution: true },
+				]);
+			}
+		});
+
+		test("preserves balanced labels and decodes escaped destination parentheses", () => {
+			const tokens = Lexer.lexInline(
+				String.raw`[**report** [draft]](./my docs/a(b\)c).md) [copy](./my docs/a\(draft\).md)`,
+				{ localFileLinks: true },
+			);
+			expect(tokens).toMatchObject([
+				{
+					type: "link",
+					href: "./my docs/a(b)c).md",
+					requiresResolution: true,
+					tokens: [
+						{ type: "strong", text: "report" },
+						{ type: "text", text: " [draft]" },
+					],
+				},
+				{ type: "text", text: " " },
+				{ type: "link", href: "./my docs/a(draft).md", requiresResolution: true },
+			]);
+		});
+
+		test("keeps standard destinations and titles ahead of local candidates", () => {
+			for (const [source, href, title] of [
+				['[report](report.md "draft copy")', "report.md", "draft copy"],
+				["[report](report.md 'draft copy')", "report.md", "draft copy"],
+				["[report](report.md (draft copy))", "report.md", "draft copy"],
+				['[report](<my docs/report.md> "draft copy")', "my docs/report.md", "draft copy"],
+				["[report](my%20docs/report.md)", "my%20docs/report.md", null],
+			] as const) {
+				const tokens = Lexer.lexInline(source, { localFileLinks: true });
+				expect(tokens).toMatchObject([{ type: "link", href, title }]);
+				expect(tokens).toEqual(Lexer.lexInline(source));
+			}
+		});
+
+		test("does not create candidates for remote schemes, controls, or incomplete delimiters", () => {
+			for (const source of [
+				"[report](https://example.com/my docs)",
+				"[report](mailto:my docs@example.com)",
+				"[report](custom:my docs)",
+				"[report](//example.com/my docs)",
+				"[report](<my docs/report.md)",
+				"[report](my docs/report.md>)",
+				"[report](my docs/\u001breport.md)",
+				"[report](my docs/\u007freport.md)",
+				"[report](my docs/\u0085report.md)",
+				"[report](my docs/\treport.md)",
+				"[report](my docs/\nreport.md)",
+				"[report](my docs/report.md\n)",
+				"[report\ncopy](my docs/report.md)",
+				"[report](my docs/a(b.md)",
+			]) {
+				expect(Lexer.lexInline(source, { localFileLinks: true })).toEqual(Lexer.lexInline(source));
+			}
+		});
+
+		test("keeps complete spaced-path images literal instead of discovering nested links", () => {
+			for (const source of [
+				"![**report**](my docs/report.md)",
+				"![outer [report](my docs/report.md)](my docs/image.png)",
+			]) {
+				expect(Lexer.lexInline(source, { localFileLinks: true })).toEqual([
+					{ type: "text", raw: source, text: source, escaped: false },
+				]);
+			}
+		});
+
+		test("resumes candidate discovery after an image label", () => {
+			expect(
+				Lexer.lexInline("![image](image.png) [report](my docs/report.md)", { localFileLinks: true }),
+			).toMatchObject([
+				{ type: "image", href: "image.png" },
+				{ type: "text", text: " " },
+				{ type: "link", href: "my docs/report.md", requiresResolution: true },
+			]);
+		});
+
+		test("leaves code, escaped examples, valid images, and plain paths unchanged", () => {
+			const marked = new Marked();
+			for (const source of [
+				"`[report](my docs/report.md)`",
+				"```md\n[report](my docs/report.md)\n```",
+				"    [report](my docs/report.md)\n",
+				String.raw`\[report](my docs/report.md)`,
+				"![report](<my docs/report.md>)",
+				String.raw`\![report](my docs/report.md)`,
+				"![outer [report](my docs/report.md)](image.png)",
+				"![outer [report](report.md)](image.png)",
+				"[outer [report](my docs/report.md)](outer.md)",
+				"my docs/report.md",
+				'[report][ref]\n\n[ref]: <my docs/report.md> "draft copy"',
+			]) {
+				expect(marked.lexer(source, { localFileLinks: true })).toEqual(marked.lexer(source));
+			}
+		});
+	});
+
 	// Reference labels are user-controlled and index the ref-def map. An
 	// `Object.prototype` member (`constructor`, `__proto__`, `toString`, …) must
 	// not resolve to a fake definition: the link falls back to literal text and
