@@ -1,4 +1,3 @@
-import * as path from "node:path";
 import type { Component } from "@oh-my-pi/pi-tui";
 import { Text } from "@oh-my-pi/pi-tui";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
@@ -7,7 +6,7 @@ import { fileHyperlink, renderCodeCell, renderMarkdownCell, renderStatusLine, tr
 import { CachedOutputBlock, markFramedBlockComponent } from "../tui/output-block";
 import { type ReadUrlToolDetails, renderReadUrlCall, renderReadUrlResult } from "./fetch";
 import { formatFullOutputReference, formatStyledTruncationWarning, stripOutputNotice } from "./output-meta";
-import { isReadableUrlPath, splitInternalUrlSel, splitPathAndSel } from "./path-utils";
+import { isReadableUrlPath, resolveToCwd, splitInternalUrlSel, splitPathAndSel } from "./path-utils";
 import type { ReadToolDetails } from "./read";
 import { isRawSelector, parseSel } from "./read-selector";
 import { formatBytes, replaceTabs, shortenPath, wrapBrackets } from "./render-utils";
@@ -59,7 +58,8 @@ function formatReadPathLink(
 	const plainDisplayPath = options.suffixResolution
 		? shortenPath(options.suffixResolution.to)
 		: shortenPath(basePath || options.resolvedPath || options.fallbackLabel || rawPath);
-	const absoluteInputPath = path.isAbsolute(basePath) ? basePath : undefined;
+	const absoluteInputPath =
+		basePath && !INTERNAL_URL_LIKE_RE.test(basePath) ? resolveToCwd(basePath, process.cwd()) : undefined;
 	const target =
 		options.resolvedPath ?? options.sourcePath ?? tryResolveInternalUrlSync(basePath) ?? absoluteInputPath;
 	const linkedPath = target ? fileHyperlink(target, plainDisplayPath) : plainDisplayPath;

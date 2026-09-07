@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Make relative paths clickable in Read headers and grouped entries.
 - Open local source-position links at the file while preserving displayed locations.
 - Fix chat links to existing local paths containing unescaped spaces.
 - Fix file hyperlinks in Windows Terminal under WSL.

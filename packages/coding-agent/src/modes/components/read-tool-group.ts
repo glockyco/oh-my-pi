@@ -1,10 +1,9 @@
-import * as path from "node:path";
 import type { AssistantMessage, Usage } from "@oh-my-pi/pi-ai";
 import type { Component } from "@oh-my-pi/pi-tui";
 import { Container, Text } from "@oh-my-pi/pi-tui";
 import { InternalUrlRouter, XD_URL_PREFIX } from "../../internal-urls";
 import { getLanguageFromPath, theme } from "../../modes/theme/theme";
-import { parseLineRanges, splitPathAndSel } from "../../tools/path-utils";
+import { parseLineRanges, resolveToCwd, splitPathAndSel } from "../../tools/path-utils";
 import { PREVIEW_LIMITS, shortenPath } from "../../tools/render-utils";
 import { fileHyperlink, renderCodeCell, tryResolveInternalUrlSync } from "../../tui";
 import { canonicalizeMessage } from "../../utils/thinking-display";
@@ -187,7 +186,7 @@ function readTargetLinkPath(basePath: string, entryLinkPath: string | undefined)
 	if (entryLinkPath) return entryLinkPath;
 	const resolvedInternalPath = tryResolveInternalUrlSync(basePath);
 	if (resolvedInternalPath) return resolvedInternalPath;
-	return path.isAbsolute(basePath) ? basePath : undefined;
+	return basePath && !URL_LIKE_RE.test(basePath) ? resolveToCwd(basePath, process.cwd()) : undefined;
 }
 
 function linkPathForTargets(targets: ReadDisplayTarget[]): string | undefined {
