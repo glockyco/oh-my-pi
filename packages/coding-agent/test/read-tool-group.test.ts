@@ -1,6 +1,7 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
 import * as url from "node:url";
+import * as envUtils from "@oh-my-pi/pi-utils/env";
 import { resetSettingsForTest, Settings, settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { getDefault } from "@oh-my-pi/pi-coding-agent/config/settings-schema";
 import { ReadToolGroupComponent, readArgsCollapseIntoGroup } from "@oh-my-pi/pi-tui/chat/read-tool-group";
@@ -21,6 +22,10 @@ describe("ReadToolGroupComponent", () => {
 		resetSettingsForTest();
 		await Settings.init({ inMemory: true });
 		await themeModule.initTheme(false, undefined, undefined, "dark", "light");
+	});
+
+	beforeEach(() => {
+		vi.spyOn(envUtils, "isWsl").mockReturnValue(false);
 	});
 
 	afterEach(() => {
