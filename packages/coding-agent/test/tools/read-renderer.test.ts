@@ -1,6 +1,7 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
 import * as url from "node:url";
+import * as envUtils from "@oh-my-pi/pi-utils/env";
 import { resetSettingsForTest, Settings, settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { ToolExecutionComponent } from "@oh-my-pi/pi-coding-agent/modes/components/tool-execution";
 import { theme as activeTheme, getThemeByName, initTheme } from "@oh-my-pi/pi-coding-agent/modes/theme/theme";
@@ -23,7 +24,12 @@ beforeAll(async () => {
 	await Settings.init({ inMemory: true });
 });
 
+beforeEach(() => {
+	vi.spyOn(envUtils, "isWsl").mockReturnValue(false);
+});
+
 afterEach(() => {
+	vi.restoreAllMocks();
 	settings.clearOverride("tui.hyperlinks");
 });
 

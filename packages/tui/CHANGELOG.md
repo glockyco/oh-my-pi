@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Enable automatic hyperlinks in Windows Terminal fallback profiles.
+
 ## [18.1.12] - 2026-09-06
 
 ### Fixed
