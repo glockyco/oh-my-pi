@@ -14,6 +14,7 @@ afterAll(() => {
 	resetSettingsForTest();
 });
 
+
 describe("read ToolExecutionComponent framing", () => {
 	it("renders framed read results inside the standard tool container padding", () => {
 		const uiStub = { requestRender() {}, requestComponentRender() {} } as unknown as TUI;
