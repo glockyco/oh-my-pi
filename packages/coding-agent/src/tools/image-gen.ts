@@ -19,6 +19,8 @@ import { isAuthenticated, type ModelRegistry } from "../config/model-registry";
 import { settings } from "../config/settings";
 import type { CustomTool } from "../extensibility/custom-tools/types";
 import imageGenDescription from "../prompts/tools/image-gen.md" with { type: "text" };
+import { fileHyperlink } from "../tui/hyperlink";
+import { renderDefaultToolExecution } from "./default-renderer";
 import { resolveReadPath } from "./path-utils";
 
 const IMAGE_TIMEOUT = 3 * 60 * 1000;
@@ -207,6 +209,25 @@ export const imageGenTool: CustomTool<typeof imageGenSchema, ImageGenToolDetails
 	approval: "write",
 	description: prompt.render(imageGenDescription),
 	parameters: imageGenSchema,
+	renderResult(result, options, uiTheme, args) {
+		const details = result.details;
+		const text =
+			!result.isError && details?.imagePaths.length
+				? buildResponseSummary(
+						details.provider,
+						details.model,
+						details.imagePaths.map(imagePath => fileHyperlink(imagePath, imagePath)),
+						details.responseText,
+					)
+				: result.content
+						.filter(block => block.type === "text")
+						.map(block => block.text)
+						.join("\n");
+		return renderDefaultToolExecution(
+			{ label: "GenerateImage", args, result: { output: text, isError: result.isError }, options },
+			uiTheme,
+		);
+	},
 	async execute(_toolCallId, params, _onUpdate, ctx, signal) {
 		return untilAborted(signal, async () => {
 			const sessionId = ctx.sessionManager.getSessionId();
