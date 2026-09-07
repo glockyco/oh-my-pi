@@ -186,7 +186,7 @@ describe("tool output OSC 8 file:// hyperlinks", () => {
 			.renderResult(
 				{
 					content: [{ type: "text", text: "Updated src/a.ts" }],
-					details: { diff: "+1|// x", op: "update", path: editPath },
+					details: { diff: "+1|// x", op: "update", path: editPath, firstChangedLine: 17 },
 				},
 				{ expanded: false, isPartial: false, renderContext: { editMode: "hashline" } },
 				theme,

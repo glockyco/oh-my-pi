@@ -343,7 +343,7 @@ describe("ReadToolGroupComponent", () => {
 		expect(usageIndices[0]).toBeGreaterThan(previewIndex);
 	});
 
-	it("links grouped summary paths to resolved filesystem paths and selector lines", () => {
+	it("links grouped summary paths to files while keeping selector lines visible", () => {
 		cfgTuiHyperlinks.override(settings, "always");
 		const component = new ReadToolGroupComponent();
 		const examplePath = path.resolve("/workspace/src/example.ts");
