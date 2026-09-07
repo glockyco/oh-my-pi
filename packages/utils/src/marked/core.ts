@@ -106,6 +106,8 @@ export namespace Tokens {
 		type: "link";
 		raw: string;
 		href: string;
+		/** Requires a confirmed local file target before rendering as a link. */
+		requiresResolution?: boolean;
 		title?: string | null;
 		text: string;
 		tokens: Token[];
@@ -308,6 +310,8 @@ export interface MarkedOptions {
 	async?: boolean;
 	breaks?: boolean;
 	gfm?: boolean;
+	/** Recognizes local destinations with spaces when standard link parsing fails. */
+	localFileLinks?: boolean;
 	pedantic?: boolean;
 	silent?: boolean;
 	tokenizer?: Tokenizer | TokenizerObject | null;
@@ -334,6 +338,7 @@ const DEFAULTS: MarkedOptions = {
 	async: false,
 	breaks: false,
 	gfm: true,
+	localFileLinks: false,
 	pedantic: false,
 	silent: false,
 	tokenizer: null,
@@ -473,7 +478,24 @@ export class Tokenizer {
 	}
 }
 
-function matchLink(src: string, lexer: Lexer): Tokens.Link | Tokens.Image | undefined {
+function isLocalFileDestination(href: string, raw: string): boolean {
+	if (!href.includes(" ") || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(raw) || href.startsWith("//")) {
+		return false;
+	}
+	return !/^[a-z][a-z\d+.-]*:/i.test(href) || /^file:/i.test(href) || /^[a-z]:[\\/]/i.test(href);
+}
+
+function tokenizeLinkLabel(label: string, lexer: Lexer): Token[] {
+	if (!lexer.options.localFileLinks || lexer.state.inLink) return lexer.inlineTokens(label);
+	lexer.state.inLink = true;
+	try {
+		return lexer.inlineTokens(label);
+	} finally {
+		lexer.state.inLink = false;
+	}
+}
+
+function matchLink(src: string, lexer: Lexer, output: Token[]): Tokens.Link | Tokens.Image | Tokens.Text | undefined {
 	const image = src.startsWith("![");
 	if (!(image || src.startsWith("["))) return undefined;
 	const labelStart = image ? 2 : 1;
@@ -487,11 +509,29 @@ function matchLink(src: string, lexer: Lexer): Tokens.Link | Tokens.Image | unde
 		let href = inside;
 		let title: string | null = null;
 		const titleMatch = /^(<[^>]*>|\S+?)(?:\s+(?:"([\s\S]*)"|'([\s\S]*)'|\(([\s\S]*)\)))?$/.exec(inside);
-		if (!titleMatch) return undefined;
+		if (!titleMatch) {
+			if (!lexer.options.localFileLinks || lexer.state.inLink || /[<>]/.test(inside)) return undefined;
+			const raw = src.slice(0, destinationEnd + 1);
+			href = cleanUrl(inside);
+			if (!isLocalFileDestination(href, raw)) return undefined;
+			// Keep failed images literal, including nested labels and escaped image openers.
+			if (image || output.at(-1)?.raw.endsWith("!")) {
+				return { type: "text", raw, text: raw, escaped: false };
+			}
+			return {
+				type: "link",
+				raw,
+				href,
+				title: null,
+				text: label,
+				tokens: tokenizeLinkLabel(label, lexer),
+				requiresResolution: true,
+			};
+		}
 		href = cleanUrl(titleMatch[1]!);
 		title = titleMatch[2] ?? titleMatch[3] ?? titleMatch[4] ?? null;
 		const raw = src.slice(0, destinationEnd + 1);
-		const tokens = lexer.inlineTokens(label);
+		const tokens = tokenizeLinkLabel(label, lexer);
 		return image
 			? { type: "image", raw, href, title, text: unescapeMarkdown(label), tokens }
 			: { type: "link", raw, href, title, text: label, tokens };
@@ -507,7 +547,7 @@ function matchLink(src: string, lexer: Lexer): Tokens.Link | Tokens.Image | unde
 	const def = lexer.tokens.links[ref.replace(/\s+/g, " ").toLowerCase()];
 	if (!def) return undefined;
 	const raw = src.slice(0, rawEnd);
-	const tokens = lexer.inlineTokens(label);
+	const tokens = tokenizeLinkLabel(label, lexer);
 	return image
 		? { type: "image", raw, href: def.href, title: def.title ?? null, text: unescapeMarkdown(label), tokens }
 		: { type: "link", raw, href: def.href, title: def.title ?? null, text: label, tokens };
@@ -581,9 +621,10 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[] = []): Token[] 
 			rest = rest.slice(html.length);
 			continue;
 		}
-		const link = matchLink(rest, lexer);
+		const link = matchLink(rest, lexer, output);
 		if (link) {
-			output.push(link);
+			if (link.type === "text") appendText(output, link.raw, link.text, link.escaped);
+			else output.push(link);
 			rest = rest.slice(link.raw.length);
 			continue;
 		}
