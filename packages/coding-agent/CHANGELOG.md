@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix file hyperlinks in Windows Terminal under WSL.
+
 ## [18.6.1] - 2026-10-04
 
 ### Fixed
