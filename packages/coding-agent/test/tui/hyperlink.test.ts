@@ -475,6 +475,40 @@ describe("resource links in chat markdown", () => {
 		await fs.rm(tempDir, { recursive: true, force: true });
 	});
 
+	it("recovers spaced file and directory links only after resolving existing paths", async () => {
+		const file = path.join(tempDir, "reports (draft)", "review notes.md");
+		const directory = path.join(tempDir, "review notes");
+		await Bun.write(file, "Reviewed notes");
+		await fs.mkdir(directory);
+		const text =
+			"[**Notes**](reports (draft)/review notes.md) and [Folder](review notes) and [Missing](missing notes.md)";
+		const before = new terminalCaps.Markdown(text, 0, 0, getMarkdownTheme()).render(400).join("\n");
+		expect(extractAnyTerminatorLinkUri(before)).toBeUndefined();
+		expect(stripVTControlCharacters(before)).toContain("[**Notes**](reports (draft)/review notes.md)");
+
+		const targets = await resolveMarkdownLinkTargets([text], { cwd: tempDir });
+		expect([...targets.keys()].sort()).toEqual(["reports (draft)/review notes.md", "review notes"]);
+		const rendered = new terminalCaps.Markdown(text, 0, 0, {
+			...getMarkdownTheme(),
+			resolveLink: href => targets.get(href),
+		})
+			.render(400)
+			.join("\n");
+		expect(rendered).toContain(`\x1b]8;;${url.pathToFileURL(file).href}\x07`);
+		expect(rendered).toContain(`\x1b]8;;${url.pathToFileURL(directory).href}\x07`);
+		const visible = Bun.stripANSI(rendered);
+		expect(visible).toContain("Notes (reports (draft)/review notes.md)");
+		expect(visible).toContain("[Missing](missing notes.md)");
+	});
+
+	it("preserves a valid Markdown title even when a spaced filename also exists", async () => {
+		const file = path.join(tempDir, "report");
+		await Bun.write(file, "Title target");
+		await Bun.write(path.join(tempDir, "report (draft)"), "Different file");
+		const targets = await resolveMarkdownLinkTargets(["[Report](report (draft))"], { cwd: tempDir });
+		expect([...targets]).toEqual([["report", url.pathToFileURL(file).href]]);
+	});
+
 	it("expands labeled, reference, and table links to real local and artifact files", async () => {
 		const localFile = path.join(tempDir, "local", "reviewed findings#.json");
 		const artifactFile = path.join(tempDir, "42.txt");
