@@ -518,8 +518,9 @@ function parseTmuxVersionFromEnv(env: NodeJS.ProcessEnv): { major: number; minor
  *      terminal (`TERM=xterm-256color`, no `TERM_PROGRAM`), but it renders
  *      OSC 8 in its own grid and opens links itself on Ctrl+click, so the
  *      outer terminal's support does not matter.
- *   3. Static terminal capability — terminals whose {@link TerminalInfo} marks
- *      `hyperlinks: false` (e.g. `base`) stay off unless the user forced on.
+ *   3. Static terminal capability, with `WT_SESSION` enabling the `base` and
+ *      `trueColor` fallback profiles. Other terminals whose {@link TerminalInfo}
+ *      marks `hyperlinks: false` stay off unless the user forced on.
  *   4. GNU screen's explicit session marker (`STY`) always off, even if tmux is
  *      also present: a screen layer anywhere in the path cannot forward OSC 8.
  *   5. tmux session (`TMUX` set): enabled when tmux self-reports >= 3.4 via
@@ -545,7 +546,8 @@ export function shouldEnableHyperlinksByDefault(
 
 	if (isInsideHerdr(env) && !env.STY && !env.TMUX) return true;
 
-	if (!getTerminalInfo(terminalId).hyperlinks) return false;
+	const windowsTerminalFallback = Boolean(env.WT_SESSION) && (terminalId === "base" || terminalId === "trueColor");
+	if (!getTerminalInfo(terminalId).hyperlinks && !windowsTerminalFallback) return false;
 
 	// STY is GNU screen's explicit session marker. It vetoes tmux enabling when
 	// multiplexers are nested because screen cannot forward OSC 8 anywhere in the
@@ -794,7 +796,7 @@ export const TERMINAL: RuntimeTerminal = (() => {
 	}
 	// Hyperlink (OSC 8) capability. The static per-terminal flag lives on
 	// KNOWN_TERMINALS; shouldEnableHyperlinksByDefault folds in runtime context —
-	// PI_FORCE_HYPERLINKS / PI_NO_HYPERLINKS overrides plus a tmux>=3.4 gate so
+	// user overrides, WT_SESSION fallback support, and a tmux>=3.4 gate so
 	// modern tmux forwards OSC 8 to outer terminals that opt in via
 	// `terminal-features "*:hyperlinks"`.
 	resolved.hyperlinks = shouldEnableHyperlinksByDefault(Bun.env, resolved.id);

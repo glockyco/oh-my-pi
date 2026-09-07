@@ -1,6 +1,7 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
 import * as url from "node:url";
+import * as envUtils from "@oh-my-pi/pi-utils/env";
 import { resetSettingsForTest, Settings, settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 // Installs the pi-tui scheme host that decides which reads collapse into the group.
 import "@oh-my-pi/pi-coding-agent/internal-urls/router";
@@ -25,6 +26,10 @@ describe("ReadToolGroupComponent", () => {
 		resetSettingsForTest();
 		await Settings.init({ inMemory: true });
 		await themeModule.initTheme(false, undefined, undefined, "dark", "light");
+	});
+
+	beforeEach(() => {
+		vi.spyOn(envUtils, "isWsl").mockReturnValue(false);
 	});
 
 	afterEach(() => {
