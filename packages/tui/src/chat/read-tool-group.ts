@@ -1,6 +1,7 @@
+import type { AssistantMessage, Usage } from "@oh-my-pi/pi-ai";
+import { homedir } from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AssistantMessage, Usage } from "@oh-my-pi/pi-ai";
 import { type Component } from "../tui";
 import { Container } from "../tui";
 import { Text } from "../components/text";
@@ -14,7 +15,7 @@ import {
 	splitPathAndSel,
 } from "../tools/read";
 import { PREVIEW_LIMITS, shortenPath } from "../render/render-utils";
-import { fileHyperlink, renderCodeCell } from "../render";
+import { fileHyperlink, renderCodeCell, tryResolveInternalUrlSync } from "../render";
 import { canonicalizeMessage } from "./thinking-display";
 import { internalUrlSchemeSpec, splitUrlScheme } from "../tools/url-scheme-host";
 import type { ToolExecutionHandle } from "./tool-execution";
@@ -203,7 +204,10 @@ function readResultLinkPath(details: ReadToolDetails | undefined): string | unde
 
 function readTargetLinkPath(basePath: string, entryLinkPath: string | undefined): string | undefined {
 	if (entryLinkPath) return entryLinkPath;
-	return path.isAbsolute(basePath) ? basePath : undefined;
+	const resolvedInternalPath = tryResolveInternalUrlSync(basePath);
+	if (resolvedInternalPath) return resolvedInternalPath;
+	if (!basePath || splitUrlScheme(basePath)) return undefined;
+	return basePath.startsWith("~/") ? path.join(homedir(), basePath.slice(2)) : path.resolve(basePath);
 }
 
 function firstSelectorLine(selector: string | undefined): number | undefined {

@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
+import { homedir } from "node:os";
 import * as path from "node:path";
 import * as url from "node:url";
 import * as envUtils from "@oh-my-pi/pi-utils/env";
@@ -61,6 +62,27 @@ describe("ReadToolGroupComponent", () => {
 		expect(rendered).not.toContain("line 1");
 		expect(rendered.toLowerCase()).not.toContain("ctrl+o");
 	});
+
+	it.each(["src/example.ts", "~/example.ts"])(
+		"links paths before and after results without metadata: %s",
+		relativePath => {
+			cfgTuiHyperlinks.override(settings, "always");
+			const component = new ReadToolGroupComponent();
+			component.updateArgs({ path: `${relativePath}:7-9` }, "read-relative");
+			const target = relativePath.startsWith("~/")
+				? path.join(homedir(), relativePath.slice(2))
+				: path.resolve(relativePath);
+			const expectedUri = url.pathToFileURL(target).href;
+			const pending = component.render(200).join("\n");
+			expect(extractLinkUris(pending)).toContain(expectedUri);
+			expect(extractLinkTexts(pending)).toContain(relativePath);
+			component.updateResult({ content: [{ type: "text", text: "selected lines" }] }, false, "read-relative");
+			const completed = component.render(200).join("\n");
+			expect(extractLinkUris(completed)).toContain(expectedUri);
+			expect(extractLinkTexts(completed)).toContain(relativePath);
+			expect(Bun.stripANSI(completed)).toContain(":7-9");
+		},
+	);
 
 	it("uses the enabled dot for completed reads", () => {
 		const component = new ReadToolGroupComponent();
