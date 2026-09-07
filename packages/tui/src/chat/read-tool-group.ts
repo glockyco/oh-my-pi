@@ -170,24 +170,6 @@ function readTargetLinkPath(basePath: string, entryLinkPath: string | undefined)
 	return path.isAbsolute(basePath) ? basePath : undefined;
 }
 
-function firstSelectorLine(selector: string | undefined): number | undefined {
-	try {
-		return selectorLineRanges(selector)?.[0].startLine;
-	} catch {
-		return undefined;
-	}
-}
-
-function firstSelectorLineForTargets(targets: ReadDisplayTarget[]): number | undefined {
-	let line: number | undefined;
-	for (const target of targets) {
-		const targetLine = firstSelectorLine(target.selector);
-		if (targetLine === undefined) continue;
-		if (line === undefined || targetLine < line) line = targetLine;
-	}
-	return line;
-}
-
 function linkPathForTargets(targets: ReadDisplayTarget[]): string | undefined {
 	for (const target of targets) {
 		if (target.linkPath) return target.linkPath;
@@ -707,7 +689,6 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 		return this.#formatPathValue(row.targetPath, {
 			correctedFrom: this.#correctedFromForTargets(row.targets),
 			conflictCount: this.#conflictCountForTargets(row.targets),
-			line: firstSelectorLineForTargets(row.targets),
 			linkPath: linkPathForTargets(row.targets),
 		});
 	}
@@ -756,7 +737,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 
 	#formatPathValue(
 		value: string,
-		options: { correctedFrom?: string; conflictCount?: number; line?: number; linkPath?: string } = {},
+		options: { correctedFrom?: string; conflictCount?: number; linkPath?: string } = {},
 	): string {
 		const split = splitPathAndSel(value);
 		const selectorSuffix = split.sel ? `:${split.sel}` : "";
@@ -764,8 +745,7 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 		const filePath = shortenPath(baseValue);
 		let pathDisplay = filePath ? theme.fg("accent", filePath) : theme.fg("toolOutput", "…");
 		if (filePath && options.linkPath) {
-			const linkOptions = options.line !== undefined ? { line: options.line } : undefined;
-			pathDisplay = fileHyperlink(options.linkPath, pathDisplay, linkOptions);
+			pathDisplay = fileHyperlink(options.linkPath, pathDisplay);
 		}
 		if (selectorSuffix) {
 			pathDisplay += theme.fg("accent", selectorSuffix);
@@ -796,7 +776,6 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 			? this.#formatPathValue(entry.path, {
 					correctedFrom: entry.correctedFrom,
 					conflictCount: entry.conflictCount,
-					line: firstSelectorLine(split.sel),
 					linkPath: readTargetLinkPath(split.path, entry.linkPath),
 				})
 			: "";

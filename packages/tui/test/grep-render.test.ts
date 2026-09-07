@@ -6,8 +6,10 @@ import { getThemeByName } from "@oh-my-pi/pi-tui/theme";
 import { sanitizeText } from "@oh-my-pi/pi-utils";
 import { grepToolRenderer } from "@oh-my-pi/pi-tui/tools/grep";
 
-function extractLinkUris(text: string): string[] {
-	return [...text.matchAll(/\x1b\]8;[^;]*;([^\x1b]+)\x1b\\/g)].map(match => match[1]!);
+function extractLinkUris(text: string, label?: string): string[] {
+	return [...text.matchAll(/\x1b\]8;[^;]*;([^\x1b]+)\x1b\\([\s\S]*?)\x1b\]8;;\x1b\\/g)]
+		.filter(match => label === undefined || Bun.stripANSI(match[2]!).includes(label))
+		.map(match => match[1]!);
 }
 
 afterEach(() => {

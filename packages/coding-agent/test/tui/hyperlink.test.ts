@@ -173,13 +173,12 @@ describe("fileHyperlink", () => {
 		expect(uri).not.toContain(" ");
 	});
 
-	it("percent-encodes URL-reserved path bytes before appending query params", () => {
+	it("percent-encodes URL-reserved path bytes in file targets", () => {
 		setHyperlinkMode("always");
 		const filePath = path.resolve("/Users/foo/a#b?c% d.ts");
-		const result = fileHyperlink(filePath, "a#b?c% d.ts", { line: 12 });
+		const result = fileHyperlink(filePath, "a#b?c% d.ts");
 		const uri = extractLinkUri(result);
 		const expectedUri = new URL(url.pathToFileURL(path.resolve(filePath)).href);
-		expectedUri.searchParams.set("line", "12");
 		expect(uri).toBe(expectedUri.href);
 	});
 
@@ -191,21 +190,12 @@ describe("fileHyperlink", () => {
 		expect(decodeURIComponent(new URL(uri!).pathname)).toEndWith("/relative file#1.ts");
 	});
 
-	it("appends line and col as query params when provided", () => {
+	it("keeps line and column labels out of the file target", () => {
 		setHyperlinkMode("always");
 		const filePath = path.resolve("/Users/foo/bar.ts");
-		const result = fileHyperlink(filePath, "bar.ts", { line: 42, col: 7 });
-		const uri = extractLinkUri(result);
-		expect(uri).toContain("line=42");
-		expect(uri).toContain("col=7");
-	});
-
-	it("omits query params when line/col are not provided", () => {
-		setHyperlinkMode("always");
-		const filePath = path.resolve("/Users/foo/bar.ts");
-		const result = fileHyperlink(filePath, "bar.ts");
-		const uri = extractLinkUri(result);
-		expect(uri).not.toContain("?");
+		const result = fileHyperlink(filePath, "bar.ts:42:7");
+		expect(extractLinkUri(result)).toBe(url.pathToFileURL(filePath).href);
+		expect(stripVTControlCharacters(result)).toBe("bar.ts:42:7");
 	});
 
 	it("produces a stable id for the same path", () => {
@@ -264,16 +254,35 @@ describe.skipIf(process.platform === "win32")("WSL file hyperlink targets", () =
 		}
 	});
 
-	it("links encoded WSL paths through the Windows share without changing labels or positions", () => {
+	it("links encoded WSL paths through the Windows share without changing labels", () => {
 		const label = "a#b?c% dé.ts";
-		const result = fileHyperlink(`/home/user/${label}`, label, { line: 12, col: 3 });
-		expect(extractLinkUri(result)).toBe(
-			"file://wsl.localhost/Ubuntu%20Dev/home/user/a%23b%3Fc%25%20d%C3%A9.ts?line=12&col=3",
-		);
+		const result = fileHyperlink(`/home/user/${label}`, label);
+		expect(extractLinkUri(result)).toBe("file://wsl.localhost/Ubuntu%20Dev/home/user/a%23b%3Fc%25%20d%C3%A9.ts");
 		expect(stripVTControlCharacters(result)).toBe(label);
 
 		setHyperlinkMode("off");
 		expect(fileHyperlink(`/home/user/${label}`, label)).toBe(label);
+	});
+
+	it("normalizes positions only for this distribution's verified WSL share", async () => {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-wsl-position-"));
+		try {
+			const file = path.join(dir, "my file.ts");
+			await Bun.write(file, "export const value = 1;");
+			const pathname = url.pathToFileURL(file).pathname;
+			const target = `file://wsl.localhost/Ubuntu%20Dev${pathname}`;
+			const located = `${target}?line=12&col=3#L12`;
+			const legacyHost = `file://wsl$/Ubuntu%20Dev${pathname}:12:3`;
+			const otherDistribution = `file://wsl.localhost/Other${pathname}?line=12`;
+			const targets = await resolveMarkdownLinkTargets([
+				`[Current](${located}) [Legacy](${legacyHost}) [Other](${otherDistribution})`,
+			]);
+			expect(targets.get(located)).toBe(target);
+			expect(targets.get(legacyHost)).toBe(target);
+			expect(targets.has(otherDistribution)).toBe(false);
+		} finally {
+			await fs.rm(dir, { recursive: true, force: true });
+		}
 	});
 
 	it("keeps mounted drives and resolved relative paths inside the same WSL share", () => {
@@ -514,7 +523,7 @@ describe("resource links in chat markdown", () => {
 		const artifactFile = path.join(tempDir, "42.txt");
 		await Bun.write(localFile, '{"reviewed":true}');
 		await Bun.write(artifactFile, "artifact output");
-		const href = "local://reviewed%20findings%23.json";
+		const href = "local://reviewed%20findings%23.json#L12";
 		const text = [
 			`[Reviewed findings](${href})`,
 			"",
@@ -542,7 +551,80 @@ describe("resource links in chat markdown", () => {
 		expect(visible).not.toContain("file://");
 	});
 
-	it("links ordinary paths against the session cwd while preserving displayed paths and source anchors", async () => {
+	it("resolves numeric source locations to files without changing the displayed references", async () => {
+		const file = path.join(tempDir, "src", "my file.ts");
+		await Bun.write(file, "export const value = 1;");
+		const fileUri = url.pathToFileURL(file).href;
+		const hrefs = [
+			"src/my file.ts:12",
+			"src/my%20file.ts:12:3",
+			"src/my%20file.ts:12-18",
+			"src/my%20file.ts#L12C3-L18C4",
+			"src/my%20file.ts?line=12&column=3",
+			`${fileUri}:12:3`,
+		];
+		const text = hrefs.map((href, index) => `[Location ${index}](${href})`).join("\n\n");
+		const targets = await resolveMarkdownLinkTargets([text], { cwd: tempDir });
+		for (const href of hrefs) expect(targets.get(href)).toBe(fileUri);
+		const rendered = new terminalCaps.Markdown(text, 0, 0, {
+			...getMarkdownTheme(),
+			resolveLink: href => targets.get(href),
+		})
+			.render(400)
+			.join("\n");
+		const visible = Bun.stripANSI(rendered);
+		for (const href of hrefs) expect(visible).toContain(href);
+		const emitted = [...rendered.matchAll(/\x1b\]8;[^;]*;([^\x1b\x07]+)/g)].map(match => match[1]);
+		expect(new Set(emitted)).toEqual(new Set([fileUri]));
+	});
+
+	it("preserves unrelated local URL fields and all web URL positions", async () => {
+		const file = path.join(tempDir, "source.ts");
+		await Bun.write(file, "source");
+		const fileUri = url.pathToFileURL(file).href;
+		const mixed = "source.ts?line=12&col=3&view=raw#heading";
+		const unknown = "source.ts?line=summary&col=0#Lunknown";
+		const web = "https://example.com/source.ts?line=12#L12";
+		const text = `[Mixed](${mixed}) [Unknown](${unknown}) [Web](${web})`;
+		const targets = await resolveMarkdownLinkTargets([text], { cwd: tempDir });
+		expect(targets.get(mixed)).toBe(`${fileUri}?view=raw#heading`);
+		expect(targets.get(unknown)).toBe(`${fileUri}?line=summary&col=0#Lunknown`);
+		expect(targets.has(web)).toBe(false);
+		const rendered = new terminalCaps.Markdown(text, 0, 0, {
+			...getMarkdownTheme(),
+			resolveLink: href => targets.get(href),
+		})
+			.render(400)
+			.join("\n");
+		expect(rendered).toContain(`\x1b]8;;${web}\x07`);
+	});
+
+	it.skipIf(process.platform === "win32")(
+		"prefers literal position-like filenames over navigation syntax",
+		async () => {
+			await Bun.write(path.join(tempDir, "source.ts"), "Base file");
+			for (const name of ["source.ts:12:3", "source.ts#L12", "source.ts?line=12"]) {
+				const file = path.join(tempDir, name);
+				await Bun.write(file, "Literal filename");
+				const targets = await resolveMarkdownLinkTargets([`[Literal](${name})`], { cwd: tempDir });
+				expect(targets.get(name)).toBe(url.pathToFileURL(file).href);
+			}
+		},
+	);
+
+	it.skipIf(process.platform === "win32")(
+		"does not reinterpret dangling or explicitly encoded literal filenames",
+		async () => {
+			await Bun.write(path.join(tempDir, "source.ts"), "Base file");
+			await fs.symlink(path.join(tempDir, "missing-target"), path.join(tempDir, "source.ts:12"));
+			const text =
+				"[Dangling](source.ts:12) [Encoded](source.ts%3A99) [Missing](missing.ts:12:3) [Invalid](source.ts:0)";
+			const targets = await resolveMarkdownLinkTargets([text], { cwd: tempDir });
+			expect([...targets]).toEqual([]);
+		},
+	);
+
+	it("links ordinary paths while retaining source positions only in displayed text", async () => {
 		const file = path.join(tempDir, "src", "my file.ts");
 		await Bun.write(file, "export const value = 1;");
 		const relative = "src/my%20file.ts#L7";
@@ -556,7 +638,7 @@ describe("resource links in chat markdown", () => {
 		})
 			.render(300)
 			.join("\n");
-		expect(extractAnyTerminatorLinkUri(output)).toBe(`${fileUri}#L7`);
+		expect(extractAnyTerminatorLinkUri(output)).toBe(fileUri);
 		expect(output).toContain(`\x1b]8;;${fileUri}\x07`);
 		expect(output).toContain("\x1b]8;;src/missing.ts\x07");
 		expect(output).toContain("\x1b]8;;#heading\x07");
