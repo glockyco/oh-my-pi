@@ -86,7 +86,7 @@ export class SkillMessageComponent extends Container {
 
 		const filePath = details?.path;
 		if (filePath) {
-			parts.push(fileHyperlink(filePath, theme.fg("accent", shortenPath(filePath)), { line: 1 }));
+			parts.push(fileHyperlink(filePath, theme.fg("accent", shortenPath(filePath))));
 		}
 		if (typeof details?.lineCount === "number") {
 			parts.push(theme.fg("muted", `${details.lineCount} ${details.lineCount === 1 ? "line" : "lines"}`));

@@ -21,7 +21,7 @@ import {
 	resolveLocalUrlToPath,
 	resolveMemoryUrlToPath,
 } from "../internal-urls";
-import { expandPath } from "../tools/path-utils";
+import { expandPath, probeLiteralPathExists } from "../tools/path-utils";
 
 const OSC = "\x1b]";
 const ST = "\x1b\\";
@@ -46,16 +46,14 @@ function buildLinkId(uri: string): string {
 	return (h >>> 0).toString(16).padStart(8, "0");
 }
 
-/** Build a properly encoded `file://` URI with optional line/col query params. */
-function buildFileUri(filePath: string, opts?: { line?: number; col?: number }): string {
+/** Build a properly encoded `file://` URI for the platform file handler. */
+function buildFileUri(filePath: string): string {
 	const uri = url.pathToFileURL(filePath);
 	if (isWsl() && $env.WT_SESSION && $env.WSL_DISTRO_NAME) {
 		// Windows Terminal opens paths on Windows; Linux GUI terminals need the original local URI.
 		uri.hostname = "wsl.localhost";
 		uri.pathname = `/${encodeURIComponent($env.WSL_DISTRO_NAME)}${uri.pathname}`;
 	}
-	if (opts?.line !== undefined) uri.searchParams.set("line", String(opts.line));
-	if (opts?.col !== undefined) uri.searchParams.set("col", String(opts.col));
 	return uri.href;
 }
 
@@ -171,13 +169,79 @@ export function urlHyperlinkAlways(url: string, displayText: string): string {
  * the text already contains an OSC 8 sequence (prevents double-wrapping).
  * Relative paths resolve against the current working directory before URI
  * encoding so the OSC 8 target is always a valid `file://` URL.
+ * Positions belong in the display text. Generic file handlers have no portable line/column protocol.
  *
  * @param filePath - Filesystem path
  * @param displayText - Text to render as the hyperlink anchor (may contain ANSI codes)
- * @param opts - Optional line/col position appended as `?line=N&col=M` query params
  */
-export function fileHyperlink(filePath: string, displayText: string, opts?: { line?: number; col?: number }): string {
-	return wrapHyperlink(buildFileUri(filePath, opts), displayText);
+export function fileHyperlink(filePath: string, displayText: string): string {
+	return wrapHyperlink(buildFileUri(filePath), displayText);
+}
+
+const FILE_POSITION_RE = /:(?:[1-9]\d*:[1-9]\d*|[1-9]\d*(?:-[1-9]\d*)?)$/;
+const FILE_LINE_FRAGMENT_RE = /^#L[1-9]\d*(?:C[1-9]\d*)?(?:-L?[1-9]\d*(?:C[1-9]\d*)?)?$/;
+const FILE_POSITION_QUERY_KEYS = ["line", "col", "column"] as const;
+const POSITIVE_INTEGER_RE = /^[1-9]\d*$/;
+
+/** Remove recognized source positions without changing unrelated query or fragment semantics. */
+function withoutFilePositions(suffix: string): string {
+	if (!suffix) return suffix;
+	const hashIndex = suffix.indexOf("#");
+	let query = hashIndex < 0 ? suffix : suffix.slice(0, hashIndex);
+	let hash = hashIndex < 0 ? "" : suffix.slice(hashIndex);
+	if (FILE_LINE_FRAGMENT_RE.test(hash)) hash = "";
+	if (query.startsWith("?")) {
+		const params = new URLSearchParams(query);
+		let changed = false;
+		for (const key of FILE_POSITION_QUERY_KEYS) {
+			const values = params.getAll(key);
+			if (values.length > 0 && values.every(value => POSITIVE_INTEGER_RE.test(value))) {
+				params.delete(key);
+				changed = true;
+			}
+		}
+		if (changed) query = params.size > 0 ? `?${params}` : "";
+	}
+	return query + hash;
+}
+
+/** Translate only this distribution's WSL share before checking the local filesystem. */
+function localPathFromFileUri(href: string): string {
+	const parsed = new URL(href);
+	if (isWsl() && (parsed.hostname === "wsl.localhost" || parsed.hostname === "wsl$")) {
+		const separator = parsed.pathname.indexOf("/", 1);
+		const distribution = decodeURIComponent(parsed.pathname.slice(1, separator < 0 ? undefined : separator));
+		if (distribution === $env.WSL_DISTRO_NAME) {
+			parsed.hostname = "";
+			parsed.pathname = separator < 0 ? "/" : parsed.pathname.slice(separator);
+		}
+	}
+	return url.fileURLToPath(parsed);
+}
+
+/** A literal filesystem entry wins over a source-location interpretation, including a dangling symlink. */
+async function resolveFileLink(href: string, cwd: string): Promise<{ sourcePath: string; suffix: string }> {
+	const isFileUrl = extractUriScheme(href) === "file";
+	const suffixIndex = href.search(/[?#]/);
+	const rawPath = suffixIndex < 0 ? href : href.slice(0, suffixIndex);
+	const originalSuffix = suffixIndex < 0 ? "" : href.slice(suffixIndex);
+	const suffix = withoutFilePositions(originalSuffix);
+	const decoded = isFileUrl ? localPathFromFileUri(rawPath) : decodeURIComponent(rawPath);
+	let sourcePath = path.resolve(cwd, expandPath(decoded));
+
+	// An explicit file URI defines its delimiters. A plain POSIX path can contain them literally.
+	if (!isFileUrl && suffix !== originalSuffix && (process.platform !== "win32" || !href.includes("?"))) {
+		const literal = path.resolve(cwd, expandPath(decodeURIComponent(href)));
+		if ((await probeLiteralPathExists(literal, cwd)) !== "missing") return { sourcePath: literal, suffix: "" };
+	}
+
+	const position = FILE_POSITION_RE.exec(rawPath);
+	if (position && (await probeLiteralPathExists(sourcePath, cwd)) === "missing") {
+		const base = rawPath.slice(0, position.index);
+		const decodedBase = isFileUrl ? localPathFromFileUri(base) : decodeURIComponent(base);
+		sourcePath = path.resolve(cwd, expandPath(decodedBase));
+	}
+	return { sourcePath, suffix };
 }
 
 /**
@@ -214,14 +278,9 @@ export async function resolveMarkdownLinkTargets(
 					const resource = await router.resolve(href, { ...context, pathOnly: true, skipDirectoryListing: true });
 					if (!resource.sourcePath) return;
 					sourcePath = resource.sourcePath;
-					suffix = parseInternalUrl(href).hash;
+					suffix = withoutFilePositions(parseInternalUrl(href).hash);
 				} else {
-					const suffixIndex = href.search(/[?#]/);
-					const filePath = suffixIndex < 0 ? href : href.slice(0, suffixIndex);
-					suffix = suffixIndex < 0 ? "" : href.slice(suffixIndex);
-					const decoded =
-						extractUriScheme(href) === "file" ? url.fileURLToPath(href) : decodeURIComponent(filePath);
-					sourcePath = path.resolve(context?.cwd ?? process.cwd(), expandPath(decoded));
+					({ sourcePath, suffix } = await resolveFileLink(href, context?.cwd ?? process.cwd()));
 				}
 				const stat = await fs.stat(sourcePath);
 				if (!stat.isFile() && !stat.isDirectory()) return;

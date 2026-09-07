@@ -1652,7 +1652,7 @@ const COLLAPSED_TEXT_LIMIT = PREVIEW_LIMITS.COLLAPSED_LINES * 2;
  * whose matches span the whole file can't dump its entire length. */
 const EXPANDED_TEXT_LIMIT = PREVIEW_LIMITS.EXPANDED_LINES * 2;
 
-const SEARCH_CODE_FRAME_LINE_RE = /^\s*\*?(\d+)│/;
+const SEARCH_CODE_FRAME_LINE_RE = /^\s*\*?\d+│/;
 
 function searchScopeMeta(details: GrepToolDetails | undefined): string | undefined {
 	if (!details?.scopePath) return undefined;
@@ -1664,12 +1664,6 @@ function linkUrlLikeSearchHeader(raw: string, styled: string): { line: string; a
 	const resolvedPath = tryResolveInternalUrlSync(raw);
 	if (resolvedPath) return { line: fileHyperlink(resolvedPath, styled), absPath: resolvedPath };
 	return { line: uriHyperlink(raw, styled) };
-}
-
-function parseSearchDisplayLineNumber(line: string): number | undefined {
-	const match = SEARCH_CODE_FRAME_LINE_RE.exec(line);
-	if (!match) return undefined;
-	return Number.parseInt(match[1]!, 10);
 }
 
 const SEARCH_MATCH_LINE_RE = /^\s*\*\d+(?:│|[:|])/;
@@ -1722,11 +1716,10 @@ function renderSearchDisplayLines(
 			return { raw: line, styled: ctx.headerPath ? fileHyperlink(ctx.headerPath, styled) : styled };
 		}
 		const styled = uiTheme.fg("toolOutput", line);
-		const lineNumber = parseSearchDisplayLineNumber(line);
 		const filePath = ctx.filePath ?? urlFile;
 		return {
 			raw: line,
-			styled: filePath && lineNumber !== undefined ? fileHyperlink(filePath, styled, { line: lineNumber }) : styled,
+			styled: filePath && SEARCH_CODE_FRAME_LINE_RE.test(line) ? fileHyperlink(filePath, styled) : styled,
 		};
 	});
 }
