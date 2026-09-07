@@ -9,6 +9,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as url from "node:url";
 import { getMarkdownLinkUrls, setTerminalHyperlinks, TERMINAL } from "@oh-my-pi/pi-tui";
+import { $env, isWsl } from "@oh-my-pi/pi-utils";
 import { isSettingsInitialized, settings } from "../config/settings";
 import {
 	extractUriScheme,
@@ -48,6 +49,11 @@ function buildLinkId(uri: string): string {
 /** Build a properly encoded `file://` URI with optional line/col query params. */
 function buildFileUri(filePath: string, opts?: { line?: number; col?: number }): string {
 	const uri = url.pathToFileURL(filePath);
+	if (isWsl() && $env.WT_SESSION && $env.WSL_DISTRO_NAME) {
+		// Windows Terminal opens paths on Windows; Linux GUI terminals need the original local URI.
+		uri.hostname = "wsl.localhost";
+		uri.pathname = `/${encodeURIComponent($env.WSL_DISTRO_NAME)}${uri.pathname}`;
+	}
 	if (opts?.line !== undefined) uri.searchParams.set("line", String(opts.line));
 	if (opts?.col !== undefined) uri.searchParams.set("col", String(opts.col));
 	return uri.href;

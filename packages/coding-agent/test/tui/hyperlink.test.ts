@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -19,6 +19,7 @@ import {
 	urlHyperlinkAlways,
 } from "@oh-my-pi/pi-coding-agent/tui/hyperlink";
 import * as terminalCaps from "@oh-my-pi/pi-tui";
+import * as piUtils from "@oh-my-pi/pi-utils";
 
 // OSC 8 sequence markers
 const OSC = "\x1b]";
@@ -56,7 +57,12 @@ afterAll(() => {
 	resetSettingsForTest();
 });
 
+beforeEach(() => {
+	vi.spyOn(piUtils, "isWsl").mockReturnValue(false);
+});
+
 afterEach(() => {
+	vi.restoreAllMocks();
 	settings.clearOverride("tui.hyperlinks");
 	if (ORIGINAL_NO_COLOR === undefined) {
 		delete Bun.env.NO_COLOR;
@@ -230,6 +236,72 @@ describe("fileHyperlink", () => {
 		const result = fileHyperlink(filePath, colored);
 		expect(result).toContain(colored);
 		expect(isHyperlinked(result)).toBe(true);
+	});
+});
+
+// WSL uses POSIX paths; native Windows path behavior remains covered above.
+describe.skipIf(process.platform === "win32")("WSL file hyperlink targets", () => {
+	const envKeys = ["WT_SESSION", "WSL_DISTRO_NAME"] as const;
+	let savedEnv: Partial<Record<(typeof envKeys)[number], string | undefined>>;
+
+	beforeEach(() => {
+		savedEnv = {};
+		for (const key of envKeys) {
+			savedEnv[key] = piUtils.$env[key];
+			delete piUtils.$env[key];
+		}
+		vi.spyOn(piUtils, "isWsl").mockReturnValue(true);
+		piUtils.$env.WT_SESSION = "test-windows-terminal";
+		piUtils.$env.WSL_DISTRO_NAME = "Ubuntu Dev";
+		setHyperlinkMode("always");
+	});
+
+	afterEach(() => {
+		for (const key of envKeys) {
+			const value = savedEnv[key];
+			if (value === undefined) delete piUtils.$env[key];
+			else piUtils.$env[key] = value;
+		}
+	});
+
+	it("links encoded WSL paths through the Windows share without changing labels or positions", () => {
+		const label = "a#b?c% dé.ts";
+		const result = fileHyperlink(`/home/user/${label}`, label, { line: 12, col: 3 });
+		expect(extractLinkUri(result)).toBe(
+			"file://wsl.localhost/Ubuntu%20Dev/home/user/a%23b%3Fc%25%20d%C3%A9.ts?line=12&col=3",
+		);
+		expect(stripVTControlCharacters(result)).toBe(label);
+
+		setHyperlinkMode("off");
+		expect(fileHyperlink(`/home/user/${label}`, label)).toBe(label);
+	});
+
+	it("keeps mounted drives and resolved relative paths inside the same WSL share", () => {
+		expect(extractLinkUri(fileHyperlink("/mnt/c/Users/user/my file.ts", "my file.ts"))).toBe(
+			"file://wsl.localhost/Ubuntu%20Dev/mnt/c/Users/user/my%20file.ts",
+		);
+		const relative = "relative file#1.ts";
+		expect(extractLinkUri(fileHyperlink(relative, relative))).toBe(
+			`file://wsl.localhost/Ubuntu%20Dev${url.pathToFileURL(path.resolve(relative)).pathname}`,
+		);
+	});
+
+	it("keeps local file URIs when WSL has no Windows Terminal host signal", () => {
+		delete piUtils.$env.WT_SESSION;
+		const filePath = "/home/user/my file.ts";
+		expect(extractLinkUri(fileHyperlink(filePath, "file"))).toBe(url.pathToFileURL(filePath).href);
+	});
+
+	it("keeps local file URIs when the WSL distribution name is unavailable", () => {
+		delete piUtils.$env.WSL_DISTRO_NAME;
+		const filePath = "/home/user/my file.ts";
+		expect(extractLinkUri(fileHyperlink(filePath, "file"))).toBe(url.pathToFileURL(filePath).href);
+	});
+
+	it("does not convert native paths based on Windows Terminal variables alone", () => {
+		vi.spyOn(piUtils, "isWsl").mockReturnValue(false);
+		const filePath = "/home/user/my file.ts";
+		expect(extractLinkUri(fileHyperlink(filePath, "file"))).toBe(url.pathToFileURL(filePath).href);
 	});
 });
 
