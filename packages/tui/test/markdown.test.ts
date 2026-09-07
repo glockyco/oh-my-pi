@@ -4,6 +4,7 @@ import {
 	autolinkSchemeScanIndex,
 	clearRenderCache,
 	extractMarkdownLinks,
+	getMarkdownLinkUrls,
 	Markdown,
 	renderInlineMarkdown,
 	urlTokenPossible,
@@ -24,6 +25,23 @@ function getCellItalic(terminal: VirtualTerminal, row: number, col: number): boo
 }
 
 describe("renderInlineMarkdown", () => {
+	it("keeps unverified local-file candidates literal instead of styling their labels as links", () => {
+		const source = "[**Guide**](./docs/My Guide.md)";
+		const theme = { ...defaultMarkdownTheme, link: (text: string) => `<link>${text}</link>` };
+		const rendered = renderInlineMarkdown(source, theme);
+
+		expect(stripVTControlCharacters(rendered)).toBe(source);
+		expect(stripVTControlCharacters(renderInlineMarkdown(`<code>${source}</code>`, theme))).toBe(source);
+		expect(stripVTControlCharacters(renderInlineMarkdown(source, { ...theme, resolveLink: () => undefined }))).toBe(
+			source,
+		);
+		expect(
+			stripVTControlCharacters(
+				renderInlineMarkdown(source, { ...theme, resolveLink: () => "file:///tmp/docs/My%20Guide.md" }),
+			),
+		).toBe("<link>Guide</link>");
+	});
+
 	it("preserves ST-terminated OSC 8 links before inline lexing", () => {
 		const st = "\x1b\\";
 		const input = `\x1b]8;;file:///tmp/example.ts${st}\`example.ts\`\x1b]8;;${st}`;
@@ -1429,6 +1447,76 @@ bar`,
 			return { visible, targets };
 		}
 
+		it("keeps unverified file candidates literal while valid Markdown links retain their fallback", () => {
+			const candidate = "[**Missing guide**](./docs/Missing Guide.md)";
+			const source = `${candidate} and [site](https://example.com "A title")`;
+			const theme = { ...defaultMarkdownTheme, resolveLink: () => undefined };
+			const output = new Markdown(source, 0, 0, theme).render(160).join("\n");
+			const { visible, targets } = inspectHyperlinks(output);
+
+			expect(visible.trim()).toBe(`${candidate} and site (https://example.com)`);
+			expect(targets.slice(0, candidate.length).every(target => target === null)).toBe(true);
+			expect(new Set(targets.filter(target => target !== null))).toEqual(new Set(["https://example.com"]));
+		});
+
+		it("preserves formatted file labels and uses only the resolved encoded URI as the hyperlink target", () => {
+			const href = "./docs/My Guide.md";
+			const target = "file:///tmp/docs/My%20Guide.md";
+			const theme = { ...defaultMarkdownTheme, resolveLink: (url: string) => (url === href ? target : undefined) };
+			const output = new Markdown(`[**Read** the guide](${href})`, 0, 0, theme).render(120).join("\n");
+			const inspected = inspectHyperlinks(output);
+
+			expect(inspected.visible.trim()).toBe(`Read the guide (${href})`);
+			expect(inspected.targets.slice(0, "Read the guide".length).every(url => url === target)).toBe(true);
+			expect(new Set(inspected.targets.filter(url => url !== null))).toEqual(new Set([target]));
+		});
+
+		it("discovers file candidates in windowed documents without interpreting code or images", () => {
+			const href = "./docs/My Guide.md";
+			const prefix = "An ordinary paragraph.\n\n".repeat(800);
+			const source =
+				`${prefix}[Guide](${href})\n\n` +
+				"`[code](./docs/Code Guide.md)`\n\n" +
+				"```md\n[fenced](./docs/Fenced Guide.md)\n```\n\n" +
+				"![image](./docs/Image Guide.png)";
+			const theme = {
+				...defaultMarkdownTheme,
+				resolveLink: (url: string) => (url === href ? "file:///tmp/docs/My%20Guide.md" : undefined),
+			};
+
+			expect(extractMarkdownLinks(source)).toEqual([{ text: "Guide", href }]);
+			expect(getMarkdownLinkUrls(source)).toEqual([href]);
+			const output = new Markdown(source, 0, 0, theme).render(120).join("\n");
+			expect(new Set(inspectHyperlinks(output).targets.filter(target => target !== null))).toEqual(
+				new Set(["file:///tmp/docs/My%20Guide.md"]),
+			);
+		});
+
+		it("updates file candidates when streaming completes or replaces the destination", () => {
+			const href = "./docs/My Guide.md";
+			const target = "file:///tmp/docs/My%20Guide.md";
+			const theme = { ...defaultMarkdownTheme, resolveLink: (url: string) => (url === href ? target : undefined) };
+			const prefix = "A stable paragraph.\n\n";
+			const partial = `${prefix}[Guide](${href}`;
+			const markdown = new Markdown(partial, 0, 0, theme);
+			markdown.transientRenderCache = true;
+
+			const incomplete = markdown.render(120).join("\n");
+			expect(stripVTControlCharacters(incomplete)).toContain(`[Guide](${href}`);
+			expect(incomplete).not.toContain("\x1b]8;;");
+
+			markdown.setText(`${partial})`);
+			const complete = inspectHyperlinks(markdown.render(120).join("\n"));
+			expect(complete.visible).toContain(`Guide (${href})`);
+			expect(new Set(complete.targets.filter(url => url !== null))).toEqual(new Set([target]));
+
+			const replacement = "[Guide](./docs/Missing Guide.md)";
+			markdown.setText(`${prefix}${replacement}`);
+			const invalidated = markdown.render(120).join("\n");
+			expect(stripVTControlCharacters(invalidated)).toContain(replacement);
+			expect(invalidated).not.toContain("\x1b]8;;");
+		});
+
 		it("should not duplicate URL for autolinked emails", () => {
 			const markdown = new Markdown("Contact user@example.com for help", 0, 0, defaultMarkdownTheme);
 
@@ -2017,6 +2105,18 @@ describe("OSC 66 text-sizing headings", () => {
 		const lines = new Markdown("# Hello", 0, 0, defaultMarkdownTheme).render(80);
 		expect(lines.some(line => line.includes(OSC66_INTRO))).toBe(false);
 		expect(lines.some(line => stripVTControlCharacters(line).includes("Hello"))).toBe(true);
+	});
+
+	it("uses resolved local-link labels in text-sized headings", () => {
+		setTerminalTextSizing(true);
+		const source = "# [**Guide**](my docs/guide.md)";
+		const resolved = new Markdown(source, 0, 0, {
+			...defaultMarkdownTheme,
+			resolveLink: () => "file:///tmp/my%20docs/guide.md",
+		}).render(100);
+		expect(visibleWidth(resolved[0]!)).toBe(2 * visibleWidth("Guide"));
+		const unresolved = new Markdown(source, 0, 0, defaultMarkdownTheme).render(100);
+		expect(unresolved[0]).toContain("[**Guide**](my docs/guide.md)");
 	});
 
 	it("emits a scale-2 OSC 66 span for H1 and reserves its second visual row", () => {
