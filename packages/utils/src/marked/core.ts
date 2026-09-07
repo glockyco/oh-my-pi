@@ -116,6 +116,8 @@ export namespace Tokens {
 		type: "link";
 		raw: string;
 		href: string;
+		/** Requires a confirmed local file target before rendering as a link. */
+		requiresResolution?: boolean;
 		title?: string | null;
 		text: string;
 		tokens: Token[];
@@ -342,6 +344,8 @@ export interface MarkedOptions {
 	async?: boolean;
 	breaks?: boolean;
 	gfm?: boolean;
+	/** Recognizes local destinations with spaces when standard link parsing fails. */
+	localFileLinks?: boolean;
 	pedantic?: boolean;
 	silent?: boolean;
 	tokenizer?: Tokenizer | TokenizerObject | null;
@@ -368,6 +372,7 @@ const DEFAULTS: MarkedOptions = {
 	async: false,
 	breaks: false,
 	gfm: true,
+	localFileLinks: false,
 	pedantic: false,
 	silent: false,
 	tokenizer: null,
@@ -503,8 +508,23 @@ interface NestedMatch {
 	closers: InlineClosers;
 }
 
-/** Matches a link or image at the start of `src`, a suffix of `closers`' source. */
-function matchLink(src: string, lexer: Lexer, closers: InlineClosers): NestedMatch | undefined {
+function isLocalFileDestination(href: string, raw: string): boolean {
+	if (!href.includes(" ") || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(raw) || href.startsWith("//")) {
+		return false;
+	}
+	return !/^[a-z][a-z\d+.-]*:/i.test(href) || /^file:/i.test(href) || /^[a-z]:[\\/]/i.test(href);
+}
+
+/**
+ * Matches a link or image at the start of `src`, a suffix of `closers`' source, lexed after `output`. A local-file
+ * image candidate yields its raw source, which stays literal text.
+ */
+function matchLink(
+	src: string,
+	lexer: Lexer,
+	closers: InlineClosers,
+	output: Token[],
+): NestedMatch | string | undefined {
 	const image = src.startsWith("![");
 	if (!(image || src.startsWith("["))) return undefined;
 	const labelStart = image ? 2 : 1;
@@ -518,7 +538,19 @@ function matchLink(src: string, lexer: Lexer, closers: InlineClosers): NestedMat
 		let href = inside;
 		let title: string | null = null;
 		const titleMatch = /^(<[^>]*>|\S+?)(?:\s+(?:"([\s\S]*)"|'([\s\S]*)'|\(([\s\S]*)\)))?$/.exec(inside);
-		if (!titleMatch) return undefined;
+		if (!titleMatch) {
+			if (!lexer.options.localFileLinks || lexer.state.inLink || /[<>]/.test(inside)) return undefined;
+			const raw = src.slice(0, destinationEnd + 1);
+			href = cleanUrl(inside);
+			if (!isLocalFileDestination(href, raw)) return undefined;
+			// Keep failed images literal, including nested labels and escaped image openers.
+			if (image || output.at(-1)?.raw.endsWith("!")) return raw;
+			return {
+				token: { type: "link", raw, href, title: null, text: label, tokens: [], requiresResolution: true },
+				src: label,
+				closers: closers.nested(src, labelEnd),
+			};
+		}
 		href = cleanUrl(titleMatch[1]!);
 		title = titleMatch[2] ?? titleMatch[3] ?? titleMatch[4] ?? null;
 		const raw = src.slice(0, destinationEnd + 1);
@@ -640,7 +672,17 @@ function inlineTokens(src: string, lexer: Lexer, output: Token[]): Token[] {
 	const lex = openInlineSource(src, lexer, output);
 	for (let nested = lexToNested(lex); nested; nested = lexToNested(lex)) {
 		offered = { lexer, nested, outer: lex };
-		nested.token.tokens = lexer.inlineTokens(nested.src);
+		// Local-file candidates are not recognized inside a link or image label.
+		const label =
+			lexer.options.localFileLinks &&
+			!lexer.state.inLink &&
+			(nested.token.type === "link" || nested.token.type === "image");
+		if (label) lexer.state.inLink = true;
+		try {
+			nested.token.tokens = lexer.inlineTokens(nested.src);
+		} finally {
+			if (label) lexer.state.inLink = false;
+		}
 		// An override that returned without lexing the text leaves its offer to no later lex of an equal string.
 		offered = undefined;
 		output.push(nested.token);
@@ -704,7 +746,14 @@ function lexToNested(lex: InlineLex): NestedMatch | undefined {
 			rest = rest.slice(html.length);
 			continue;
 		}
-		const nested = matchLink(rest, lexer, closers) ?? matchEmphasis(rest, output, closers);
+		const link = matchLink(rest, lexer, closers, output);
+		if (typeof link === "string") {
+			const pos = src.length - rest.length;
+			textRun.append(output, pos, pos + link.length);
+			rest = rest.slice(link.length);
+			continue;
+		}
+		const nested = link ?? matchEmphasis(rest, output, closers);
 		if (nested) {
 			lex.rest = rest.slice(nested.token.raw.length);
 			return nested;

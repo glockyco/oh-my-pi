@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Keep recovered local-path links literal until their targets are resolved.
 - Enable automatic hyperlinks in Windows Terminal fallback profiles.
 
 ## [18.6.1] - 2026-10-04

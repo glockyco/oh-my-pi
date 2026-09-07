@@ -594,6 +594,7 @@ const strikethroughExtension: TokenizerAndRendererExtension = {
 };
 
 const markdownParser = new Marked();
+markdownParser.setOptions({ localFileLinks: true });
 
 // Math spans (`$$…$$`, `\[…\]`, `$…$`, `\(…\)`) are tokenized as a dedicated
 // `math` inline token before markdown's escape/emphasis/link rules run, so
@@ -1460,7 +1461,7 @@ export interface MarkdownTheme {
 	heading: (text: string) => string;
 	link: (text: string) => string;
 	linkUrl: (text: string) => string;
-	/** Resolve the OSC 8 destination without changing visible text; undefined preserves the authored URL. */
+	/** Resolve the OSC 8 destination. Undefined preserves valid links but leaves local-file candidates as literal text. */
 	resolveLink?: (href: string) => string | undefined;
 	code: (text: string) => string;
 	codeBlock: (text: string) => string;
@@ -1579,7 +1580,7 @@ function soleDisplayMath(tokens?: Token[]): (Token & { text: string }) | null {
 	return math;
 }
 
-function plainInlineTokens(tokens: Token[]): string {
+function plainInlineTokens(tokens: Token[], resolveLink?: MarkdownTheme["resolveLink"]): string {
 	let result = "";
 	for (const token of tokens) {
 		if (isMathToken(token)) {
@@ -1588,13 +1589,19 @@ function plainInlineTokens(tokens: Token[]): string {
 		}
 		switch (token.type) {
 			case "text":
-				result += token.tokens && token.tokens.length > 0 ? plainInlineTokens(token.tokens) : token.text;
+				result +=
+					token.tokens && token.tokens.length > 0 ? plainInlineTokens(token.tokens, resolveLink) : token.text;
 				break;
 			case "strong":
 			case "em":
 			case "del":
+				result += plainInlineTokens(token.tokens || [], resolveLink);
+				break;
 			case "link":
-				result += plainInlineTokens(token.tokens || []);
+				result +=
+					token.requiresResolution && !resolveLink?.(token.href)
+						? token.raw
+						: plainInlineTokens(token.tokens || [], resolveLink);
 				break;
 			case "codespan":
 				result += token.text;
@@ -3309,7 +3316,7 @@ export class Markdown implements Component {
 				const headingLevel = token.depth;
 				const headingPrefix = `${"#".repeat(headingLevel)} `;
 				const headingText = this.#renderInlineTokens(token.tokens || [], styleContext);
-				const headingPlainText = plainInlineTokens(token.tokens || []);
+				const headingPlainText = plainInlineTokens(token.tokens || [], this.#theme.resolveLink);
 				let styledHeading: string;
 				if (headingLevel === 1 && TERMINAL.textSizing) {
 					const plainWidth = visibleWidth(headingPlainText);
@@ -3625,11 +3632,19 @@ export class Markdown implements Component {
 				}
 
 				case "link": {
+					const href = typeof token.href === "string" ? token.href : "";
+					const resolvedTarget = href && this.#theme.resolveLink?.(href);
+					if (token.requiresResolution && !resolvedTarget) {
+						const text = normalizeHtmlEntitiesForTerminal(token.raw);
+						trimLeadingWhitespace = false;
+						markHtmlItemWhenContent(text);
+						result += renderTextWithSwatches(text, applyTextWithNewlines, swatchGlyph);
+						break;
+					}
 					markHtmlItemWhenContent(token.text);
 					const linkText = this.#renderInlineTokens(token.tokens || [], resolvedStyleContext);
 					const styledLinkText = this.#theme.link(this.#theme.underline(linkText));
-					const href = typeof token.href === "string" ? token.href : "";
-					const target = (href && this.#theme.resolveLink?.(href)) || href;
+					const target = resolvedTarget || href;
 					const clickableLinkText = formatHyperlink(styledLinkText, target);
 					// If link text matches href, only show the link once. A missing
 					// href (malformed/partial link token) renders as plain link text
@@ -4133,6 +4148,10 @@ function renderInlineTokens(tokens: Token[], mdTheme: MarkdownTheme, applyText: 
 				result += mdTheme.strikethrough(renderInlineTokens(token.tokens || [], mdTheme, applyText)) + styleReset;
 				break;
 			case "link": {
+				if (token.requiresResolution && !mdTheme.resolveLink?.(token.href)) {
+					result += applyText(normalizeHtmlEntitiesForTerminal(token.raw));
+					break;
+				}
 				const linkText = renderInlineTokens(token.tokens || [], mdTheme, applyText);
 				result += mdTheme.link(mdTheme.underline(linkText)) + styleReset;
 				break;

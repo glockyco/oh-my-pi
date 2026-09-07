@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fix chat links to existing local paths containing unescaped spaces.
 - Fix file hyperlinks in Windows Terminal under WSL.
 
 ## [18.6.1] - 2026-10-04

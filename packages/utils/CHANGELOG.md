@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add opt-in parsing of local-file links with unescaped spaces.
+
 ## [18.5.1] - 2026-10-03
 
 ### Added
