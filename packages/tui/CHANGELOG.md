@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep recovered local-path links literal until their targets are resolved.
+- Enable automatic hyperlinks in Windows Terminal fallback profiles.
+
 ## [18.4.1] - 2026-09-28
 
 ### Breaking Changes
@@ -278,10 +283,6 @@
 ### Fixed
 
 - Fixed notifications never arriving in a Herdr pane. Herdr multiplexes panes like tmux but swallows bare OSC 9 / OSC 99 and has no passthrough envelope, so a backgrounded pane got no signal at all; delivery now goes through `herdr notification show` (a waiting question or an error rings `request`, a settled turn rings `done`), and the in-band write stays as the fallback when the pane id or the `herdr` binary is missing.
-### Fixed
-
-- Keep recovered local-path links literal until their targets are resolved.
-- Enable automatic hyperlinks in Windows Terminal fallback profiles.
 
 ## [18.1.12] - 2026-09-06
 

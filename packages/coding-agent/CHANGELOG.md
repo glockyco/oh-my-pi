@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Make generated image paths clickable in tool results.
+- Make relative paths clickable in Read headers and grouped entries.
+- Open local source-position links at the file while preserving displayed locations.
+- Fix chat links to existing local paths containing unescaped spaces.
+- Fix file hyperlinks in Windows Terminal under WSL.
+
 ## [18.4.1] - 2026-09-28
 
 ### Changed
@@ -1232,13 +1240,6 @@
 ### Fixed
 
 - Fixed GPT-6 Astra requiring `/extended-context` for its full context window: it now keeps the documented 1.05M-token window with the setting on or off, and explicit per-model `contextWindow` overrides still win.
-### Fixed
-
-- Make generated image paths clickable in tool results.
-- Make relative paths clickable in Read headers and grouped entries.
-- Open local source-position links at the file while preserving displayed locations.
-- Fix chat links to existing local paths containing unescaped spaces.
-- Fix file hyperlinks in Windows Terminal under WSL.
 
 ## [18.1.12] - 2026-09-06
 
