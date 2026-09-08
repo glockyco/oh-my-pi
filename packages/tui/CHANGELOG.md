@@ -160,6 +160,10 @@
 ### Fixed
 
 - Stopped long flicker when moving or resizing an omp pane in Warp. Resize repaints in place there after the drag settles (override with `PI_TUI_RESIZE_IN_PLACE=0`), with no alternate-screen borrow, no scrollback replay, blanked live rows so shrink drags cannot archive unfinished rows, and overlay toggle echoes repainting the modal instead of probing ([#11247](https://github.com/can1357/oh-my-pi/pull/11247) by [@H4vC](https://github.com/H4vC)).
+### Fixed
+
+- Keep recovered local-path links literal until their targets are resolved.
+- Enable automatic hyperlinks in Windows Terminal fallback profiles.
 
 ## [18.1.14] - 2026-09-07
 
@@ -172,10 +176,6 @@
 ### Fixed
 
 - Fixed notifications never arriving in a Herdr pane. Herdr multiplexes panes like tmux but swallows bare OSC 9 / OSC 99 and has no passthrough envelope, so a backgrounded pane got no signal at all; delivery now goes through `herdr notification show` (a waiting question or an error rings `request`, a settled turn rings `done`), and the in-band write stays as the fallback when the pane id or the `herdr` binary is missing.
-### Fixed
-
-- Keep recovered local-path links literal until their targets are resolved.
-- Enable automatic hyperlinks in Windows Terminal fallback profiles.
 
 ## [18.1.12] - 2026-09-06
 

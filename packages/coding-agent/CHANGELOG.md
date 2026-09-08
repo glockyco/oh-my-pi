@@ -922,6 +922,13 @@
 - Session rewrites preserve open-reader snapshots and replacement identity when a rename needs an EPERM fallback.
 - Fixed WorkPool children retaining a stale Gemini-formatted `yield` declaration when pooled items were installed or cleared.
 - Preserve effective context and output limits when model overrides change unrelated settings, such as thinking effort levels.
+### Fixed
+
+- Make generated image paths clickable in tool results.
+- Make relative paths clickable in Read headers and grouped entries.
+- Open local source-position links at the file while preserving displayed locations.
+- Fix chat links to existing local paths containing unescaped spaces.
+- Fix file hyperlinks in Windows Terminal under WSL.
 
 ## [18.1.14] - 2026-09-07
 
@@ -945,13 +952,6 @@
 ### Fixed
 
 - Fixed GPT-6 Astra requiring `/extended-context` for its full context window: it now keeps the documented 1.05M-token window with the setting on or off, and explicit per-model `contextWindow` overrides still win.
-### Fixed
-
-- Make generated image paths clickable in tool results.
-- Make relative paths clickable in Read headers and grouped entries.
-- Open local source-position links at the file while preserving displayed locations.
-- Fix chat links to existing local paths containing unescaped spaces.
-- Fix file hyperlinks in Windows Terminal under WSL.
 
 ## [18.1.12] - 2026-09-06
 
