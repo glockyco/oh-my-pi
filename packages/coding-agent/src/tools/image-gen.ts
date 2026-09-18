@@ -38,8 +38,8 @@ import { settings } from "../config/settings";
 import type { CustomTool } from "../extensibility/custom-tools/types";
 import { resolveXAIHttpCredentials } from "../lib/xai-http";
 import imageGenDescription from "../prompts/tools/image-gen.md" with { type: "text" };
-import { fileHyperlink } from "../tui/hyperlink";
-import { renderDefaultToolExecution } from "./default-renderer";
+import { fileHyperlink } from "@oh-my-pi/pi-tui/render/hyperlink";
+import { renderDefaultToolExecution } from "@oh-my-pi/pi-tui/tools/default-renderer";
 import { AUTO_IMAGE_PROVIDER_ORDER, type ImageProvider, isImageProviderId } from "./image-providers";
 import { resolveReadPath } from "./path-utils";
 
