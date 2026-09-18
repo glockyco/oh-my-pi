@@ -5,10 +5,10 @@ import { type Component } from "../tui";
 import { Container } from "../tui";
 import { Text } from "../components/text";
 import { getLanguageFromPath, theme } from "../theme";
-import { parseLineRanges, selectorLineRanges } from "../tools/line-ranges";
+import { parseLineRanges } from "../tools/line-ranges";
 import { type ReadRenderArgs, type ReadToolDetails, readSourceFsPath, splitPathAndSel } from "../tools/read";
 import { PREVIEW_LIMITS, shortenPath } from "../render/render-utils";
-import { fileHyperlink, renderCodeCell, tryResolveInternalUrlSync } from "../render";
+import { fileHyperlink, renderCodeCell } from "../render";
 import { canonicalizeMessage } from "./thinking-display";
 import { internalUrlSchemeSpec, splitUrlScheme } from "../tools/url-scheme-host";
 import type { ToolExecutionHandle } from "./tool-execution";
@@ -168,8 +168,6 @@ function readResultLinkPath(details: ReadToolDetails | undefined): string | unde
 
 function readTargetLinkPath(basePath: string, entryLinkPath: string | undefined): string | undefined {
 	if (entryLinkPath) return entryLinkPath;
-	const resolvedInternalPath = tryResolveInternalUrlSync(basePath);
-	if (resolvedInternalPath) return resolvedInternalPath;
 	if (!basePath || splitUrlScheme(basePath)) return undefined;
 	return basePath.startsWith("~/") ? path.join(homedir(), basePath.slice(2)) : path.resolve(basePath);
 }
