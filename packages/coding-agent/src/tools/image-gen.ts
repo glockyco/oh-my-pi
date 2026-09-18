@@ -19,9 +19,9 @@ import { isAuthenticated, type ModelRegistry } from "../config/model-registry";
 import { settings } from "../config/settings";
 import type { CustomTool } from "../extensibility/custom-tools/types";
 import imageGenDescription from "../prompts/tools/image-gen.md" with { type: "text" };
+import { fileHyperlink } from "@oh-my-pi/pi-tui/render/hyperlink";
+import { renderDefaultToolExecution } from "@oh-my-pi/pi-tui/tools/default-renderer";
 import { resolveConfiguredModelTarget } from "../session/role-models";
-import { fileHyperlink } from "../tui/hyperlink";
-import { renderDefaultToolExecution } from "./default-renderer";
 import { resolveReadPath } from "./path-utils";
 
 const IMAGE_TIMEOUT = 3 * 60 * 1000;
