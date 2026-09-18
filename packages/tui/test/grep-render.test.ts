@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
+import * as envUtils from "@oh-my-pi/pi-utils/env";
 import * as path from "node:path";
 import * as url from "node:url";
 import { applyHyperlinkSetting } from "../src/render/hyperlink";
@@ -12,7 +13,12 @@ function extractLinkUris(text: string, label?: string): string[] {
 		.map(match => match[1]!);
 }
 
+beforeEach(() => {
+	vi.spyOn(envUtils, "isWsl").mockReturnValue(false);
+});
+
 afterEach(() => {
+	vi.restoreAllMocks();
 	applyHyperlinkSetting("auto");
 });
 
