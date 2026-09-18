@@ -988,4 +988,3 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 		});
 	}
 }
-

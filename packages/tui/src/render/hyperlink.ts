@@ -7,18 +7,6 @@
  */
 import * as url from "node:url";
 import { $env, isWsl } from "@oh-my-pi/pi-utils";
-import { isSettingsInitialized, settings } from "../config/settings";
-import {
-	extractUriScheme,
-	InternalUrlRouter,
-	LocalProtocolHandler,
-	memoryRootsFromRegistry,
-	parseInternalUrl,
-	type ResolveContext,
-	resolveLocalUrlToPath,
-	resolveMemoryUrlToPath,
-} from "../internal-urls";
-import { expandPath, probeLiteralPathExists } from "../tools/path-utils";
 import { setTerminalHyperlinks, TERMINAL, type TerminalId } from "../terminal-capabilities";
 
 const OSC = "\x1b]";
@@ -49,8 +37,17 @@ function buildLinkId(uri: string): string {
  * Build the OSC 8 target for a file path on `terminalId`.
  *
  * A `file:` URI handed to an editor has to be a plain path. `Paths.get(URI)`
- * rejects one carrying a query or a fragment outright. The VS Code family
- * instead accepts its documented `vscode://file/<path>:<line>:<col>` form.
+ * rejects one carrying a query or a fragment outright — `IllegalArgumentException:
+ * URI has a query component` / `URI has a fragment component` — so appending
+ * `?line=` made every JVM-based language server (Kotlin LSP, Eclipse JDT LS)
+ * fail *every* request for the resulting document, and VS Code reads the query
+ * as part of the resource identity rather than as a cursor position: a blank
+ * editor tab that navigates nowhere and persists across window reloads (#12109).
+ *
+ * The VS Code family instead navigates the documented
+ * `vscode://file/<path>:<line>:<col>` form. Everywhere else the plain `file:`
+ * URI is right, with the location left in the visible text — terminals that
+ * parse a `path:line:col` suffix resolve that on their own.
  */
 export function fileUriForTerminal(
 	filePath: string,
@@ -65,6 +62,9 @@ export function fileUriForTerminal(
 		}
 		return uri.href;
 	}
+	// vscode:// takes a filesystem path with forward slashes. Encode each
+	// segment independently so separators and a Windows drive colon stay
+	// structural while reserved bytes in file names cannot become URI syntax.
 	const asPath = filePath.replace(/\\/gu, "/");
 	const encodedPath = asPath
 		.split("/")
@@ -190,165 +190,11 @@ export function urlHyperlinkAlways(url: string, displayText: string): string {
  * the text already contains an OSC 8 sequence (prevents double-wrapping).
  * Relative paths resolve against the current working directory before URI
  * encoding so the OSC 8 target is always a valid `file://` URL.
- * Positions belong in the display text. Generic file handlers have no portable line/column protocol.
  *
  * @param filePath - Filesystem path
  * @param displayText - Text to render as the hyperlink anchor (may contain ANSI codes)
+ * @param opts - Optional line/col position appended as `?line=N&col=M` query params
  */
-export function fileHyperlink(filePath: string, displayText: string): string {
-	return wrapHyperlink(buildFileUri(filePath), displayText);
-}
-
-const FILE_POSITION_RE = /:(?:[1-9]\d*:[1-9]\d*|[1-9]\d*(?:-[1-9]\d*)?)$/;
-const FILE_LINE_FRAGMENT_RE = /^#L[1-9]\d*(?:C[1-9]\d*)?(?:-L?[1-9]\d*(?:C[1-9]\d*)?)?$/;
-const FILE_POSITION_QUERY_KEYS = ["line", "col", "column"] as const;
-const POSITIVE_INTEGER_RE = /^[1-9]\d*$/;
-
-/** Remove recognized source positions without changing unrelated query or fragment semantics. */
-function withoutFilePositions(suffix: string): string {
-	if (!suffix) return suffix;
-	const hashIndex = suffix.indexOf("#");
-	let query = hashIndex < 0 ? suffix : suffix.slice(0, hashIndex);
-	let hash = hashIndex < 0 ? "" : suffix.slice(hashIndex);
-	if (FILE_LINE_FRAGMENT_RE.test(hash)) hash = "";
-	if (query.startsWith("?")) {
-		const params = new URLSearchParams(query);
-		let changed = false;
-		for (const key of FILE_POSITION_QUERY_KEYS) {
-			const values = params.getAll(key);
-			if (values.length > 0 && values.every(value => POSITIVE_INTEGER_RE.test(value))) {
-				params.delete(key);
-				changed = true;
-			}
-		}
-		if (changed) query = params.size > 0 ? `?${params}` : "";
-	}
-	return query + hash;
-}
-
-/** Translate only this distribution's WSL share before checking the local filesystem. */
-function localPathFromFileUri(href: string): string {
-	const parsed = new URL(href);
-	if (isWsl() && (parsed.hostname === "wsl.localhost" || parsed.hostname === "wsl$")) {
-		const separator = parsed.pathname.indexOf("/", 1);
-		const distribution = decodeURIComponent(parsed.pathname.slice(1, separator < 0 ? undefined : separator));
-		if (distribution === $env.WSL_DISTRO_NAME) {
-			parsed.hostname = "";
-			parsed.pathname = separator < 0 ? "/" : parsed.pathname.slice(separator);
-		}
-	}
-	return url.fileURLToPath(parsed);
-}
-
-/** A literal filesystem entry wins over a source-location interpretation, including a dangling symlink. */
-async function resolveFileLink(href: string, cwd: string): Promise<{ sourcePath: string; suffix: string }> {
-	const isFileUrl = extractUriScheme(href) === "file";
-	const suffixIndex = href.search(/[?#]/);
-	const rawPath = suffixIndex < 0 ? href : href.slice(0, suffixIndex);
-	const originalSuffix = suffixIndex < 0 ? "" : href.slice(suffixIndex);
-	const suffix = withoutFilePositions(originalSuffix);
-	const decoded = isFileUrl ? localPathFromFileUri(rawPath) : decodeURIComponent(rawPath);
-	let sourcePath = path.resolve(cwd, expandPath(decoded));
-
-	// An explicit file URI defines its delimiters. A plain POSIX path can contain them literally.
-	if (!isFileUrl && suffix !== originalSuffix && (process.platform !== "win32" || !href.includes("?"))) {
-		const literal = path.resolve(cwd, expandPath(decodeURIComponent(href)));
-		if ((await probeLiteralPathExists(literal, cwd)) !== "missing") return { sourcePath: literal, suffix: "" };
-	}
-
-	const position = FILE_POSITION_RE.exec(rawPath);
-	if (position && (await probeLiteralPathExists(sourcePath, cwd)) === "missing") {
-		const base = rawPath.slice(0, position.index);
-		const decodedBase = isFileUrl ? localPathFromFileUri(base) : decodeURIComponent(base);
-		sourcePath = path.resolve(cwd, expandPath(decodedBase));
-	}
-	return { sourcePath, suffix };
-}
-
-/**
- * Resolve Markdown hyperlinks to existing local resources or absolute file URLs.
- * Relative paths use the calling session's cwd; missing, virtual, and remote targets stay unchanged.
- */
-export async function resolveMarkdownLinkTargets(
-	texts: readonly string[],
-	context?: ResolveContext,
-): Promise<ReadonlyMap<string, string>> {
-	const targets = new Map<string, string>();
-	const urls = new Set<string>();
-	const router = InternalUrlRouter.instance();
-	for (const text of texts) {
-		for (const href of getMarkdownLinkUrls(text)) {
-			if (!safeHyperlinkUri(href) || /^(?:#|\?|\/\/)/.test(href)) continue;
-			const scheme = extractUriScheme(href);
-			// Rendering must not fetch remote resources or materialize secrets.
-			if (
-				!scheme ||
-				scheme === "file" ||
-				(/^(?:agent|artifact|history|local|memory|omp|rule|skill):\/\//i.test(href) && router.canHandle(href))
-			) {
-				urls.add(href);
-			}
-		}
-	}
-	await Promise.all(
-		[...urls].map(async href => {
-			try {
-				let sourcePath: string;
-				let suffix: string;
-				if (router.canHandle(href)) {
-					const resource = await router.resolve(href, { ...context, pathOnly: true, skipDirectoryListing: true });
-					if (!resource.sourcePath) return;
-					sourcePath = resource.sourcePath;
-					suffix = withoutFilePositions(parseInternalUrl(href).hash);
-				} else {
-					({ sourcePath, suffix } = await resolveFileLink(href, context?.cwd ?? process.cwd()));
-				}
-				const stat = await fs.stat(sourcePath);
-				if (!stat.isFile() && !stat.isDirectory()) return;
-				targets.set(href, buildFileUri(sourcePath) + suffix);
-			} catch {
-				// A model-authored link may be incomplete, stale, or outside the resource root.
-			}
-		}),
-	);
-	return targets;
-}
-
-/**
- * Synchronously resolve a filesystem-backed internal URL (e.g. `local://foo.md`,
- * `memory://root/notes.md`) to its absolute filesystem path. Returns `undefined`
- * for inputs that aren't fs-backed, aren't resolvable in the current session
- * registry, or fail to parse.
- *
- * Used by renderers to wrap fs-backed internal URLs in OSC 8 hyperlinks even
- * when the resolved path isn't yet available from tool result details (e.g.
- * during the call/streaming phase before a result lands).
- *
- * Async-resolved schemes (`artifact://`, `agent://`, `skill://`, `rule://`,
- * `omp://`) are not handled here — those rely on `details.resolvedPath` set
- * by the read tool's router resolution.
- */
-export function tryResolveInternalUrlSync(input: string): string | undefined {
-	try {
-		if (input.startsWith("local://")) {
-			const opts = LocalProtocolHandler.resolveOptions();
-			if (!opts) return undefined;
-			return resolveLocalUrlToPath(input, opts);
-		}
-		if (input.startsWith("memory://")) {
-			const url = parseInternalUrl(input);
-			const roots = memoryRootsFromRegistry();
-			for (const root of roots) {
-				try {
-					return resolveMemoryUrlToPath(url, root);
-				} catch {
-					// Try the next root; some sessions may not have this namespace mounted.
-				}
-			}
-			return undefined;
-		}
-	} catch {
-		return undefined;
-	}
-	return undefined;
+export function fileHyperlink(filePath: string, displayText: string, opts?: { line?: number; col?: number }): string {
+	return wrapHyperlink(buildFileUri(filePath, opts), displayText);
 }
