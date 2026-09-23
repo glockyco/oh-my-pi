@@ -157,6 +157,18 @@ function resolveHostedImageCarrier(
 		.find(model => model.provider === selectedModel.provider && isOpenAIHostedImageModel(model));
 }
 
+function buildResponseSummary(
+	provider: string,
+	model: string,
+	imagePaths: string[],
+	responseText?: string,
+): string {
+	const lines = [`Provider: ${provider}`, `Model: ${model}`, `Generated ${imagePaths.length} image(s):`];
+	for (const imagePath of imagePaths) lines.push(`  ${imagePath}`);
+	if (responseText) lines.push("", responseText.trim());
+	return lines.join("\n");
+}
+
 async function buildToolResult(
 	model: Model,
 	result: ImageGenerationResult,
@@ -176,11 +188,8 @@ async function buildToolResult(
 			},
 		};
 	}
-	const lines = [`Provider: ${model.provider}`, `Model: ${model.id}`, `Generated ${imagePaths.length} image(s):`];
-	for (const imagePath of imagePaths) lines.push(`  ${imagePath}`);
-	if (result.text) lines.push("", result.text.trim());
 	return {
-		content: [{ type: "text", text: lines.join("\n") }],
+		content: [{ type: "text", text: buildResponseSummary(model.provider, model.id, imagePaths, result.text) }],
 		details: {
 			provider: model.provider,
 			model: model.id,
