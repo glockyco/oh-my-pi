@@ -157,12 +157,7 @@ function resolveHostedImageCarrier(
 		.find(model => model.provider === selectedModel.provider && isOpenAIHostedImageModel(model));
 }
 
-function buildResponseSummary(
-	provider: string,
-	model: string,
-	imagePaths: string[],
-	responseText?: string,
-): string {
+function buildResponseSummary(provider: string, model: string, imagePaths: string[], responseText?: string): string {
 	const lines = [`Provider: ${provider}`, `Model: ${model}`, `Generated ${imagePaths.length} image(s):`];
 	for (const imagePath of imagePaths) lines.push(`  ${imagePath}`);
 	if (responseText) lines.push("", responseText.trim());
