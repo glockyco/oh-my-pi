@@ -180,6 +180,21 @@ function defaultImageCandidates(chain: RoleChainCandidate[], sessionModel: Model
 	});
 }
 
+/** Link the stored summary's image path lines without changing their text or metadata. */
+function linkImagePaths(text: string, imagePaths: readonly string[]): string {
+	const lines = text.split("\n");
+	const header = lines.indexOf(`Generated ${imagePaths.length} image(s):`);
+	if (header < 0) return text;
+	for (const [index, imagePath] of imagePaths.entries()) {
+		const lineIndex = header + 1 + index;
+		const line = lines[lineIndex];
+		const prefix = `  ${imagePath}`;
+		if (line === undefined || (line !== prefix && !line.startsWith(`${prefix} (`))) continue;
+		lines[lineIndex] = `  ${fileHyperlink(imagePath, imagePath)}${line.slice(prefix.length)}`;
+	}
+	return lines.join("\n");
+}
+
 async function buildToolResult(
 	model: Model,
 	result: ImageGenerationResult,
@@ -233,20 +248,13 @@ export const imageGenTool: CustomTool<typeof imageGenSchema, ImageGenToolDetails
 	parameters: imageGenSchema,
 	renderResult(result, options, uiTheme, args) {
 		const details = result.details;
-		const text =
-			!result.isError && details?.imagePaths.length
-				? buildResponseSummary(
-						details.provider,
-						details.model,
-						details.imagePaths.map(imagePath => fileHyperlink(imagePath, imagePath)),
-						details.responseText,
-					)
-				: result.content
-						.filter(block => block.type === "text")
-						.map(block => block.text)
-						.join("\n");
+		const text = result.content
+			.filter(block => block.type === "text")
+			.map(block => block.text)
+			.join("\n");
+		const output = !result.isError && details?.imagePaths.length ? linkImagePaths(text, details.imagePaths) : text;
 		return renderDefaultToolExecution(
-			{ label: "GenerateImage", args, result: { output: text, isError: result.isError }, options },
+			{ label: "GenerateImage", args, result: { output, isError: result.isError }, options },
 			uiTheme,
 		);
 	},
